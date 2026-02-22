@@ -1,6 +1,6 @@
 {
   "name": "maplayout-pro",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Professional cartographic map layouts from your browser",
   "type": "module",
   "scripts": {
@@ -14,7 +14,8 @@
     "build:web": "tsc && vite build --config vite.web.config.ts",
     "preview:web": "vite preview --config vite.web.config.ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "package": "npm run build && node scripts/package.mjs"
   },
   "dependencies": {
     "@mapbox/togeojson": "^0.16.2",

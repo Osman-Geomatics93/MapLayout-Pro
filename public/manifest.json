@@ -1,19 +1,19 @@
 {
   "manifest_version": 3,
   "name": "MapLayout Pro",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Professional cartographic map layouts from your browser — no desktop GIS required.",
   "icons": {
-    "16": "icons/icon-16.svg",
-    "48": "icons/icon-16.svg",
-    "128": "icons/icon-16.svg"
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
   },
   "action": {
     "default_popup": "src/ui/popup/popup.html",
     "default_icon": {
-      "16": "icons/icon-16.svg",
-      "48": "icons/icon-16.svg",
-      "128": "icons/icon-16.svg"
+      "16": "icons/icon-16.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
     },
     "default_title": "MapLayout Pro"
   },
