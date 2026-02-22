@@ -1,0 +1,43 @@
+{
+  "name": "maplayout-pro",
+  "version": "0.1.0",
+  "description": "Professional cartographic map layouts from your browser",
+  "type": "module",
+  "scripts": {
+    "dev": "vite build --watch --mode development",
+    "build": "tsc && vite build",
+    "build:firefox": "tsc && cross-env BROWSER=firefox vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts,.tsx",
+    "dev:web": "vite --config vite.web.config.ts",
+    "build:web": "tsc && vite build --config vite.web.config.ts",
+    "preview:web": "vite preview --config vite.web.config.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@mapbox/togeojson": "^0.16.2",
+    "@turf/area": "^7.1.0",
+    "@turf/bbox": "^7.1.0",
+    "@turf/boolean-point-in-polygon": "^7.1.0",
+    "@turf/centroid": "^7.1.0",
+    "@turf/helpers": "^7.1.0",
+    "jspdf": "^2.5.2",
+    "jszip": "^3.10.1",
+    "maplibre-gl": "^4.7.1",
+    "proj4": "^2.12.1",
+    "shpjs": "^6.2.0",
+    "svg2pdf.js": "^2.2.4"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.1.37",
+    "@types/geojson": "^7946.0.16",
+    "@types/proj4": "^2.5.5",
+    "cross-env": "^7.0.3",
+    "typescript": "^5.5.0",
+    "vite": "^5.4.0",
+    "vite-plugin-web-extension": "^4.1.0",
+    "vitest": "^2.1.0"
+  }
+}

@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MapLayout Pro</title>
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+  <link rel="stylesheet" href="../src/ui/designer/designer.css">
+</head>
+<body>
+  <!-- Top toolbar -->
+  <header class="toolbar">
+    <div class="toolbar-left">
+      <svg class="toolbar-logo" width="20" height="20" viewBox="0 0 24 24" fill="none">
+        <rect x="2" y="3" width="20" height="18" rx="2" stroke="#2563eb" stroke-width="1.5" fill="none"/>
+        <rect x="4" y="5" width="12" height="10" rx="1" stroke="#2563eb" stroke-width="1" fill="#dbeafe"/>
+      </svg>
+      <span class="toolbar-title">MapLayout Pro</span>
+    </div>
+    <div class="toolbar-center">
+      <div class="toolbar-search">
+        <svg width="14" height="14" viewBox="0 0 16 16">
+          <circle cx="6.5" cy="6.5" r="5" stroke="#94a3b8" stroke-width="1.5" fill="none"/>
+          <line x1="10" y1="10" x2="14" y2="14" stroke="#94a3b8" stroke-width="1.5"/>
+        </svg>
+        <input type="text" id="toolbar-search" placeholder="Search place or coordinates..." autocomplete="off"/>
+      </div>
+      <ul id="toolbar-search-results" class="toolbar-search-results hidden"></ul>
+    </div>
+    <div class="toolbar-right">
+      <button id="btn-export" class="toolbar-btn btn-accent" title="Export layout">
+        <svg width="16" height="16" viewBox="0 0 16 16">
+          <path d="M8 1v9M4 6l4 4 4-4M2 12v2h12v-2" stroke="currentColor" stroke-width="1.5" fill="none"/>
+        </svg>
+        Export
+      </button>
+    </div>
+  </header>
+
+  <div class="main-layout">
+    <!-- Left panel -->
+    <aside class="left-panel" id="left-panel">
+
+      <!-- AOI Section -->
+      <section class="panel-section" id="section-aoi">
+        <h3 class="section-title">Area of Interest</h3>
+        <div class="admin-selector-cascade">
+          <div id="country-selector-container"></div>
+          <div id="state-selector-container"></div>
+          <div id="district-selector-container"></div>
+        </div>
+        <div class="aoi-status" id="aoi-status">
+          <span class="aoi-placeholder">Click a country on the map or use the dropdowns above</span>
+        </div>
+        <div class="aoi-tools">
+          <button id="btn-draw-rect" class="tool-btn" title="Draw rectangle AOI">
+            <svg width="16" height="16" viewBox="0 0 16 16">
+              <rect x="2" y="3" width="12" height="10" stroke="currentColor" stroke-width="1.2" fill="none" stroke-dasharray="2,1"/>
+            </svg>
+            Rectangle
+          </button>
+          <button id="btn-clear-aoi" class="tool-btn" title="Clear selection">Clear</button>
+        </div>
+      </section>
+
+      <!-- Layers Section -->
+      <section class="panel-section" id="section-layers">
+        <h3 class="section-title">Layers</h3>
+        <div class="layer-list" id="layer-list">
+          <label class="layer-item">
+            <input type="checkbox" checked data-layer="basemap"> Basemap
+          </label>
+          <label class="layer-item">
+            <input type="checkbox" checked data-layer="boundaries"> Country Boundaries
+          </label>
+          <label class="layer-item">
+            <input type="checkbox" data-layer="states"> State / Province Boundaries
+          </label>
+          <label class="layer-item">
+            <input type="checkbox" data-layer="rivers"> Rivers
+          </label>
+          <label class="layer-item">
+            <input type="checkbox" data-layer="settlements"> Settlements
+          </label>
+        </div>
+      </section>
+
+      <!-- Data Import Section -->
+      <section class="panel-section" id="section-data-import">
+        <h3 class="section-title">Import Data</h3>
+        <div class="dropzone" id="data-dropzone">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+          <span>Drop files here or click to browse</span>
+          <span class="dropzone-hint">GeoJSON, KML, KMZ, GPX, Shapefile (.zip)</span>
+        </div>
+        <input type="file" id="data-file-input" multiple accept=".geojson,.json,.kml,.kmz,.gpx,.zip" hidden>
+        <div id="user-layer-list"></div>
+      </section>
+
+      <!-- Layout Fields Section -->
+      <section class="panel-section" id="section-fields">
+        <h3 class="section-title">Layout Fields</h3>
+        <div class="field-group">
+          <label class="field-label">Title</label>
+          <input type="text" id="field-title" class="field-input" value="Study Area Map" placeholder="Map title..."/>
+        </div>
+        <div class="field-group">
+          <label class="field-label">Subtitle</label>
+          <input type="text" id="field-subtitle" class="field-input" placeholder="Optional subtitle..."/>
+        </div>
+        <div class="field-group">
+          <label class="field-label">Author</label>
+          <input type="text" id="field-author" class="field-input" placeholder="Author name..."/>
+        </div>
+        <div class="field-group">
+          <label class="field-label">Date</label>
+          <input type="date" id="field-date" class="field-input"/>
+        </div>
+      </section>
+
+      <!-- Layout Elements Section -->
+      <section class="panel-section" id="section-elements">
+        <h3 class="section-title">Layout Elements</h3>
+        <div class="element-toggles">
+          <label class="layer-item"><input type="checkbox" id="el-na-visible" checked> North Arrow</label>
+          <label class="layer-item"><input type="checkbox" id="el-sb-visible" checked> Scale Bar</label>
+          <label class="layer-item"><input type="checkbox" id="el-lg-visible" checked> Legend</label>
+          <label class="layer-item"><input type="checkbox" id="el-grid-visible"> Coordinate Grid</label>
+        </div>
+        <div id="grid-settings" class="grid-settings hidden">
+          <div class="grid-setting-row">
+            <label>Line</label>
+            <input type="color" id="grid-color" value="#333333" title="Grid line color">
+            <input type="range" id="grid-opacity" min="0.1" max="1" step="0.05" value="0.4" title="Grid line opacity">
+            <input type="number" id="grid-line-width" min="0.02" max="0.5" step="0.02" value="0.08" title="Line width (mm)">
+          </div>
+          <div class="grid-setting-row">
+            <label>Labels</label>
+            <input type="color" id="grid-label-color" value="#333333" title="Label color">
+            <input type="number" id="grid-label-size" min="1" max="3" step="0.1" value="1.6" title="Label font size (mm)">
+            <select id="grid-label-placement" class="grid-select" title="Label placement">
+              <option value="inside" selected>Inside</option>
+              <option value="outside">Outside</option>
+            </select>
+          </div>
+        </div>
+        <div class="element-hint">Drag elements on the preview to reposition</div>
+        <button class="tool-btn" id="btn-reset-positions" title="Reset all elements to default positions">Reset Positions</button>
+      </section>
+
+      <!-- Legend Editor Section -->
+      <section class="panel-section" id="section-legend-editor">
+        <h3 class="section-title">Legend Entries</h3>
+        <div class="element-hint">Scroll wheel over legend/north arrow on preview to resize</div>
+        <div class="legend-editor-actions">
+          <button class="tool-btn" id="btn-legend-populate">Populate from Layers</button>
+          <button class="tool-btn" id="btn-legend-add">+ Add Entry</button>
+          <button class="tool-btn" id="btn-legend-clear">Clear Custom</button>
+        </div>
+        <div id="legend-entry-list" class="legend-entry-list"></div>
+      </section>
+
+      <!-- Custom Text Section -->
+      <section class="panel-section" id="section-custom-text">
+        <h3 class="section-title">Custom Text</h3>
+        <div class="element-hint">Double-click on the preview to add text</div>
+        <div id="custom-text-list"></div>
+      </section>
+
+      <!-- Drawing Tools Section -->
+      <section class="panel-section" id="section-drawing">
+        <h3 class="section-title">Drawing Tools</h3>
+        <div class="element-hint">Select a tool then click+drag on the preview to draw</div>
+        <div class="drawing-tools-bar">
+          <button class="draw-tool-btn" data-draw-tool="line" title="Line">
+            <svg width="16" height="16" viewBox="0 0 16 16"><line x1="2" y1="14" x2="14" y2="2" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+          </button>
+          <button class="draw-tool-btn" data-draw-tool="arrow" title="Arrow">
+            <svg width="16" height="16" viewBox="0 0 16 16"><line x1="2" y1="14" x2="12" y2="4" stroke="currentColor" stroke-width="1.5" fill="none"/><polyline points="7,3 13,3 13,9" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+          </button>
+          <button class="draw-tool-btn" data-draw-tool="circle" title="Circle / Ellipse">
+            <svg width="16" height="16" viewBox="0 0 16 16"><ellipse cx="8" cy="8" rx="6" ry="5" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+          </button>
+          <button class="draw-tool-btn" data-draw-tool="point" title="Point">
+            <svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="3" fill="currentColor"/></svg>
+          </button>
+          <button class="draw-tool-btn" data-draw-tool="rectangle" title="Rectangle">
+            <svg width="16" height="16" viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="10" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+          </button>
+        </div>
+        <div id="drawing-list" class="drawing-list"></div>
+      </section>
+
+      <!-- Template Section -->
+      <section class="panel-section" id="section-template">
+        <h3 class="section-title">Template</h3>
+        <select id="template-select" class="field-input">
+          <option value="scientific">Scientific Study Area</option>
+          <option value="report">Report Map</option>
+          <option value="poster">Poster Style</option>
+        </select>
+        <div class="page-options">
+          <select id="page-size" class="field-input field-half">
+            <option value="A4">A4</option>
+            <option value="A3">A3</option>
+            <option value="Letter">Letter</option>
+          </select>
+          <select id="page-orientation" class="field-input field-half">
+            <option value="landscape">Landscape</option>
+            <option value="portrait">Portrait</option>
+          </select>
+        </div>
+      </section>
+
+    </aside>
+
+    <!-- Center: split between interactive map and layout preview -->
+    <main class="center-area">
+      <!-- Interactive map (for AOI selection) -->
+      <div class="map-container" id="map-container">
+        <div id="map" class="map-view"></div>
+        <div class="map-mode-indicator" id="map-mode">
+          <span>Click a country to select it as your study area</span>
+        </div>
+      </div>
+
+      <!-- Layout preview canvas -->
+      <div class="layout-preview-container" id="layout-preview-container">
+        <div class="preview-toolbar">
+          <span class="preview-label">Layout Preview</span>
+          <div class="preview-zoom">
+            <button id="zoom-out" class="mini-btn" title="Zoom out (Ctrl+Scroll down)">-</button>
+            <span id="zoom-level">100%</span>
+            <button id="zoom-in" class="mini-btn" title="Zoom in (Ctrl+Scroll up)">+</button>
+            <button id="zoom-fit" class="mini-btn" title="Fit to view">Fit</button>
+          </div>
+          <button id="btn-refresh-preview" class="mini-btn" title="Refresh preview">Refresh</button>
+          <button id="btn-open-newtab" class="mini-btn" title="Open layout in new tab">New Tab</button>
+          <span class="preview-hint">Ctrl+Scroll on maps to zoom</span>
+        </div>
+        <div class="preview-scroll" id="preview-scroll">
+          <div id="layout-svg-host" class="layout-svg-host">
+            <!-- SVG layout will be rendered here -->
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Export modal -->
+  <div class="modal-overlay hidden" id="export-modal">
+    <div class="modal">
+      <h2 class="modal-title">Export Layout</h2>
+      <div class="modal-body">
+        <div class="field-group">
+          <label class="field-label">Format</label>
+          <div class="radio-group">
+            <label><input type="radio" name="export-format" value="pdf" checked> PDF</label>
+            <label><input type="radio" name="export-format" value="png"> PNG</label>
+            <label><input type="radio" name="export-format" value="svg"> SVG</label>
+          </div>
+        </div>
+        <div class="field-group">
+          <label class="field-label">DPI</label>
+          <select id="export-dpi" class="field-input">
+            <option value="150">150 DPI (Draft)</option>
+            <option value="300" selected>300 DPI (Print)</option>
+            <option value="600">600 DPI (High Quality)</option>
+          </select>
+        </div>
+        <div class="field-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="export-manifest" checked> Embed layout manifest (reproducibility)
+          </label>
+        </div>
+        <div class="field-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="export-citation" checked> Include data citations
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="export-cancel" class="toolbar-btn">Cancel</button>
+        <button id="export-confirm" class="toolbar-btn btn-accent">Export</button>
+      </div>
+      <div id="export-progress" class="export-progress hidden">
+        <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+        <span id="progress-text">Preparing export...</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Text edit popup (appears when clicking custom text on preview) -->
+  <div class="text-edit-popup hidden" id="text-edit-popup">
+    <input type="text" id="te-input" class="field-input" placeholder="Enter text...">
+    <div class="te-options">
+      <input type="range" id="te-size" min="1.5" max="12" step="0.5" value="3" title="Font size">
+      <input type="color" id="te-color" value="#1a1a1a" title="Color">
+      <select id="te-weight" title="Font weight">
+        <option value="normal">Normal</option>
+        <option value="bold">Bold</option>
+      </select>
+      <button id="te-delete" class="te-delete-btn" title="Delete text">&times;</button>
+    </div>
+  </div>
+
+  <!-- Drawing edit popup (appears when clicking a drawing shape on preview) -->
+  <div class="drawing-edit-popup hidden" id="drawing-edit-popup">
+    <div class="de-row">
+      <label>Stroke</label>
+      <input type="color" id="de-stroke" value="#e53e3e">
+      <input type="number" id="de-stroke-width" min="0.3" max="5" step="0.1" value="0.5">
+    </div>
+    <div class="de-row">
+      <label>Fill</label>
+      <input type="color" id="de-fill" value="#e53e3e">
+      <input type="range" id="de-fill-opacity" min="0" max="1" step="0.1" value="0">
+    </div>
+    <button id="de-delete" class="te-delete-btn" title="Delete shape">&times;</button>
+  </div>
+
+  <script type="module" src="../src/ui/designer/designer.ts"></script>
+</body>
+</html>

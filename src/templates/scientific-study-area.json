@@ -1,0 +1,150 @@
+{
+  "templateId": "scientific-study-area-v1",
+  "name": "Scientific Study Area",
+  "description": "Publication-ready study area map with two inset maps, ideal for journal papers and thesis chapters",
+  "version": "1.0.0",
+  "page": {
+    "size": "A4",
+    "orientation": "landscape",
+    "widthMM": 297,
+    "heightMM": 210,
+    "marginMM": { "top": 8, "right": 8, "bottom": 8, "left": 8 },
+    "backgroundColor": "#ffffff"
+  },
+  "frames": [
+    {
+      "id": "main-map",
+      "type": "map",
+      "role": "primary",
+      "position": { "xMM": 58, "yMM": 11, "widthMM": 228, "heightMM": 155 },
+      "map": {
+        "showGraticule": true,
+        "graticuleIntervalDeg": "auto",
+        "graticuleStyle": {
+          "stroke": "#aaaaaa",
+          "strokeWidth": 0.15,
+          "labelFontSize": 1.8,
+          "labelColor": "#666666"
+        }
+      },
+      "border": { "stroke": "#000000", "strokeWidth": 0.4 }
+    },
+    {
+      "id": "inset-country",
+      "type": "map",
+      "role": "inset",
+      "position": { "xMM": 12, "yMM": 16, "widthMM": 40, "heightMM": 38 },
+      "map": {
+        "showGraticule": false,
+        "graticuleIntervalDeg": "auto",
+        "showExtentBox": true,
+        "extentBoxStyle": { "stroke": "#cc0000", "strokeWidth": 0.5, "fill": "none" }
+      },
+      "border": { "stroke": "#000000", "strokeWidth": 0.3 },
+      "label": { "text": "Country Overview", "fontSize": 2.2, "position": "top" },
+      "connector": {
+        "targetFrameId": "main-map",
+        "style": { "stroke": "#cc0000", "strokeWidth": 0.25, "dashArray": "2,1" }
+      }
+    },
+    {
+      "id": "inset-state",
+      "type": "map",
+      "role": "inset",
+      "position": { "xMM": 12, "yMM": 66, "widthMM": 40, "heightMM": 38 },
+      "map": {
+        "showGraticule": false,
+        "graticuleIntervalDeg": "auto",
+        "showExtentBox": true,
+        "extentBoxStyle": { "stroke": "#cc0000", "strokeWidth": 0.5, "fill": "none" }
+      },
+      "border": { "stroke": "#000000", "strokeWidth": 0.3 },
+      "label": { "text": "Regional Overview", "fontSize": 2.2, "position": "top" },
+      "connector": {
+        "targetFrameId": "main-map",
+        "style": { "stroke": "#cc0000", "strokeWidth": 0.25, "dashArray": "2,1" }
+      }
+    }
+  ],
+  "elements": [
+    {
+      "id": "title",
+      "type": "text-block",
+      "position": { "xMM": 170, "yMM": 175, "anchorX": "center" },
+      "content": {
+        "title": { "text": "{{title}}", "fontSize": 5.5, "fontWeight": "bold", "fontFamily": "Noto Sans" },
+        "subtitle": { "text": "{{subtitle}}", "fontSize": 3.0, "fontFamily": "Noto Sans", "offsetYMM": 5 }
+      }
+    },
+    {
+      "id": "north-arrow",
+      "type": "north-arrow",
+      "position": { "xMM": 278, "yMM": 14, "widthMM": 8, "heightMM": 12 },
+      "style": "classic",
+      "rotation": "auto"
+    },
+    {
+      "id": "scale-bar",
+      "type": "scale-bar",
+      "position": { "xMM": 215, "yMM": 170 },
+      "style": "alternating",
+      "units": "metric",
+      "maxWidthMM": 60,
+      "showRF": true,
+      "fontSize": 2.5,
+      "divisions": 4
+    },
+    {
+      "id": "legend",
+      "type": "legend",
+      "position": { "xMM": 234, "yMM": 130, "widthMM": 50, "heightMM": "auto" },
+      "title": "Legend",
+      "autoGenerate": true,
+      "fontSize": 2.2,
+      "swatchSize": 3.5,
+      "background": { "fill": "#ffffff", "stroke": "#999999", "strokeWidth": 0.2, "padding": 2 }
+    },
+    {
+      "id": "crs-block",
+      "type": "crs-metadata",
+      "position": { "xMM": 12, "yMM": 180 },
+      "fontSize": 1.8,
+      "fontFamily": "monospace",
+      "fields": [
+        "Display CRS: Web Mercator (EPSG:3857)",
+        "Recommended Analysis CRS: {{crs.name}} (EPSG:{{crs.epsg}})",
+        "Projection: {{crs.projection}} | Datum: {{crs.datum}}",
+        "Scale bar adjusted for center latitude"
+      ]
+    },
+    {
+      "id": "neatline",
+      "type": "neatline",
+      "margin": { "top": 8, "right": 8, "bottom": 8, "left": 8 },
+      "style": { "stroke": "#000000", "strokeWidth": 0.5, "fill": "none" }
+    },
+    {
+      "id": "attribution",
+      "type": "text-block",
+      "position": { "xMM": 289, "yMM": 200, "anchorX": "right" },
+      "content": {
+        "text": { "text": "{{attribution}}", "fontSize": 1.4, "color": "#999999" }
+      }
+    },
+    {
+      "id": "author-block",
+      "type": "text-block",
+      "position": { "xMM": 12, "yMM": 200 },
+      "content": {
+        "text": { "text": "Author: {{author}} | Date: {{date}}", "fontSize": 1.8, "color": "#666666" }
+      }
+    }
+  ],
+  "variables": {
+    "title": "Study Area Map",
+    "subtitle": "",
+    "author": "",
+    "date": "auto",
+    "attribution": "auto"
+  }
+}

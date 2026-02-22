@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 60" width="40" height="60">
+  <!-- Classic north arrow: filled/unfilled triangle with N label -->
+  <defs>
+    <style>
+      .na-fill { fill: #1a1a1a; }
+      .na-empty { fill: #ffffff; stroke: #1a1a1a; stroke-width: 0.8; }
+      .na-text { font-family: 'Noto Sans', Arial, sans-serif; font-size: 10px; font-weight: 700; fill: #1a1a1a; text-anchor: middle; }
+    </style>
+  </defs>
+  <!-- "N" label -->
+  <text x="20" y="10" class="na-text">N</text>
+  <!-- Filled half (east) -->
+  <polygon points="20,15 28,50 20,42" class="na-fill"/>
+  <!-- Empty half (west) -->
+  <polygon points="20,15 12,50 20,42" class="na-empty"/>
+</svg>

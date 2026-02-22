@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head><title>Icon Generator</title></head>
+<body>
+<p>Open this file in a browser, then right-click the canvases below to save as PNG.</p>
+
+<script>
+// Generate simple extension icons at 16, 48, 128 px
+[16, 48, 128].forEach(size => {
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+
+  // Blue background with rounded rect
+  const r = size * 0.1;
+  ctx.fillStyle = '#2563eb';
+  ctx.beginPath();
+  ctx.roundRect(0, 0, size, size, r);
+  ctx.fill();
+
+  // White map frame
+  const margin = size * 0.15;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(margin, margin, size * 0.5, size * 0.45);
+
+  // Small inset
+  ctx.fillStyle = '#dbeafe';
+  ctx.fillRect(size * 0.68, margin, size * 0.18, size * 0.18);
+
+  // Scale bar line
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = size * 0.04;
+  ctx.beginPath();
+  ctx.moveTo(margin, size - margin - size * 0.05);
+  ctx.lineTo(size * 0.5, size - margin - size * 0.05);
+  ctx.stroke();
+
+  // "M" letter
+  ctx.fillStyle = '#ffffff';
+  ctx.font = `bold ${size * 0.3}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.fillText('M', size * 0.5, size * 0.82);
+
+  const label = document.createElement('div');
+  label.innerHTML = `<p>${size}x${size}</p>`;
+  document.body.appendChild(label);
+  document.body.appendChild(canvas);
+
+  // Auto-download
+  const link = document.createElement('a');
+  link.download = `icon-${size}.png`;
+  link.href = canvas.toDataURL('image/png');
+  label.appendChild(link);
+  link.textContent = `Download icon-${size}.png`;
+});
+</script>
+</body>
+</html>
