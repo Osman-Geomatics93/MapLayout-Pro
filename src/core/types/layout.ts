@@ -36,6 +36,9 @@ export interface ElementOverrides {
 export interface CustomTextAnnotation {
   id: string; text: string; position: ElementPosition;
   fontSize: number; color: string; fontWeight: 'normal' | 'bold';
+  fontStyle: 'normal' | 'italic';
+  fontFamily: string;
+  locked?: boolean;
 }
 
 export type DrawingShapeType = 'line' | 'arrow' | 'circle' | 'point' | 'rectangle';
@@ -51,6 +54,7 @@ export interface DrawingAnnotation {
   strokeWidth: number;
   fillColor: string;
   fillOpacity: number;
+  locked?: boolean;
 }
 
 export interface ImageAnnotation {
@@ -62,7 +66,9 @@ export interface ImageAnnotation {
   heightMM: number;       // display height in mm
   opacity: number;        // 0–1
   aspectRatio: number;    // original width/height for proportional resize
+  locked?: boolean;
 }
+
 
 export interface LayoutState {
   /** The base template */
@@ -99,6 +105,17 @@ export interface LayoutState {
   mainMapBBox?: import('./geo').BBox;
   /** Coordinate grid settings */
   grid?: GridSettings;
+  /** Boundary color overrides */
+  boundaryColors?: BoundaryColorSettings;
+}
+
+export interface BoundaryColorSettings {
+  aoiFill: string;
+  aoiFillOpacity: number;
+  aoiStroke: string;
+  aoiStrokeWidth: number;
+  countryStroke: string;
+  countryStrokeWidth: number;
 }
 
 export interface GridSettings {
@@ -166,7 +183,11 @@ export interface LayerConfig {
 export const PAGE_SIZES: Record<string, { width: number; height: number }> = {
   A4: { width: 210, height: 297 },
   A3: { width: 297, height: 420 },
+  A2: { width: 420, height: 594 },
+  A1: { width: 594, height: 841 },
   Letter: { width: 215.9, height: 279.4 },
+  Tabloid: { width: 279.4, height: 431.8 },
+  B4: { width: 250, height: 353 },
 };
 
 /** Get page dimensions accounting for orientation */

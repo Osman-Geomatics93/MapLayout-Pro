@@ -19,8 +19,146 @@ import { BASEMAP_CATALOG, getBasemapById, DEFAULT_BASEMAP_ID, type BasemapDefini
 import { parseUserFile } from '@core/data/UserDataLoader';
 import { getLayerColor } from '@core/data/defaultLayerStyles';
 import type { UserDataLayer } from '@core/types/userdata';
-import type { LayoutState, ElementOverrides, CustomTextAnnotation, LegendEntry, DrawingAnnotation, DrawingShapeType, ImageAnnotation } from '@core/types/layout';
+import type { LayoutState, ElementOverrides, CustomTextAnnotation, LegendEntry, DrawingAnnotation, DrawingShapeType, ImageAnnotation, BoundaryColorSettings } from '@core/types/layout';
 import type { AOISelection, BBox, LngLat } from '@core/types/geo';
+import { initLocale, setLocale, t, type Locale, type TranslationStrings } from '@core/i18n/locales';
+
+// ─── Undo / Redo History ─────────────────────────────────────────────
+
+interface HistorySnapshot {
+  customTexts: string;
+  drawings: string;
+  logoImages: string;
+  elementOverrides: string;
+  fields: string;
+  grid: string;
+  boundaryColors: string;
+}
+
+const history: { stack: HistorySnapshot[]; index: number } = {
+  stack: [],
+  index: -1,
+};
+const MAX_HISTORY = 50;
+
+function takeSnapshot(): HistorySnapshot {
+  return {
+    customTexts: JSON.stringify(state.customTexts),
+    drawings: JSON.stringify(state.drawings),
+    logoImages: JSON.stringify(state.logoImages?.map(i => ({ ...i, dataUrl: i.dataUrl.slice(0, 50) + '___LOGO_REF___' + i.id }))),
+    elementOverrides: JSON.stringify(state.elementOverrides),
+    fields: JSON.stringify(state.fields),
+    grid: JSON.stringify(state.grid),
+    boundaryColors: JSON.stringify(state.boundaryColors),
+  };
+}
+
+/** Store logos by id so undo/redo doesn't duplicate huge data URLs */
+const logoDataUrlCache = new Map<string, string>();
+
+function pushHistory(): void {
+  // Cache logo data URLs
+  for (const logo of state.logoImages || []) {
+    logoDataUrlCache.set(logo.id, logo.dataUrl);
+  }
+  const snap = takeSnapshot();
+  // Discard any redo states
+  history.stack = history.stack.slice(0, history.index + 1);
+  history.stack.push(snap);
+  if (history.stack.length > MAX_HISTORY) history.stack.shift();
+  history.index = history.stack.length - 1;
+  updateUndoRedoButtons();
+}
+
+function restoreSnapshot(snap: HistorySnapshot): void {
+  state.customTexts = JSON.parse(snap.customTexts);
+  state.drawings = JSON.parse(snap.drawings);
+  const parsedLogos: ImageAnnotation[] = JSON.parse(snap.logoImages);
+  // Restore full data URLs from cache
+  for (const logo of parsedLogos) {
+    if (logo.dataUrl.includes('___LOGO_REF___')) {
+      const cached = logoDataUrlCache.get(logo.id);
+      if (cached) logo.dataUrl = cached;
+    }
+  }
+  state.logoImages = parsedLogos;
+  state.elementOverrides = JSON.parse(snap.elementOverrides);
+  state.fields = JSON.parse(snap.fields);
+  state.grid = JSON.parse(snap.grid);
+  state.boundaryColors = snap.boundaryColors ? JSON.parse(snap.boundaryColors) : undefined;
+}
+
+function undo(): void {
+  if (history.index <= 0) return;
+  history.index--;
+  restoreSnapshot(history.stack[history.index]);
+  syncUIFromState();
+  rebuildSVGOnly();
+  updateUndoRedoButtons();
+}
+
+function redo(): void {
+  if (history.index >= history.stack.length - 1) return;
+  history.index++;
+  restoreSnapshot(history.stack[history.index]);
+  syncUIFromState();
+  rebuildSVGOnly();
+  updateUndoRedoButtons();
+}
+
+function updateUndoRedoButtons(): void {
+  const undoBtn = document.getElementById('btn-undo') as HTMLButtonElement;
+  const redoBtn = document.getElementById('btn-redo') as HTMLButtonElement;
+  if (undoBtn) undoBtn.disabled = history.index <= 0;
+  if (redoBtn) redoBtn.disabled = history.index >= history.stack.length - 1;
+}
+
+function syncUIFromState(): void {
+  // Sync field inputs
+  (document.getElementById('field-title') as HTMLInputElement).value = state.fields.title;
+  (document.getElementById('field-subtitle') as HTMLInputElement).value = state.fields.subtitle;
+  (document.getElementById('field-author') as HTMLInputElement).value = state.fields.author;
+  (document.getElementById('field-date') as HTMLInputElement).value = state.fields.date;
+  // Sync element visibility
+  if (state.elementOverrides) {
+    (document.getElementById('el-na-visible') as HTMLInputElement).checked = state.elementOverrides.northArrow.visible;
+    (document.getElementById('el-sb-visible') as HTMLInputElement).checked = state.elementOverrides.scaleBar.visible;
+    (document.getElementById('el-lg-visible') as HTMLInputElement).checked = state.elementOverrides.legend.visible;
+  }
+  if (state.grid) {
+    (document.getElementById('el-grid-visible') as HTMLInputElement).checked = state.grid.visible;
+  }
+  // Re-render sidebar lists
+  renderCustomTextList();
+  renderDrawingList();
+  renderLogoList();
+}
+
+// ─── Selected Element Tracking ─────────────────────────────────────────
+
+let selectedElementId: string | null = null;
+let selectedElementType: 'element' | 'custom-text' | 'drawing' | 'logo-image' | null = null;
+
+function selectElement(id: string, type: typeof selectedElementType): void {
+  clearSelection();
+  selectedElementId = id;
+  selectedElementType = type;
+  const svg = document.querySelector('#layout-svg-host svg') as SVGSVGElement;
+  if (!svg) return;
+  const attr = type === 'element' ? 'data-element'
+    : type === 'custom-text' ? 'data-custom-text'
+    : type === 'drawing' ? 'data-drawing'
+    : 'data-logo-image';
+  const el = svg.querySelector(`[${attr}="${id}"]`);
+  if (el) el.classList.add('selected');
+}
+
+function clearSelection(): void {
+  const svg = document.querySelector('#layout-svg-host svg') as SVGSVGElement;
+  if (svg) svg.querySelectorAll('.selected').forEach(el => el.classList.remove('selected'));
+  selectedElementId = null;
+  selectedElementType = null;
+}
 
 // ─── State ───────────────────────────────────────────────────────────
 
@@ -53,6 +191,14 @@ const state: LayoutState = {
     labelSize: 1.6,
     labelColor: '#333333',
     labelPlacement: 'inside',
+  },
+  boundaryColors: {
+    aoiFill: '#2563eb',
+    aoiFillOpacity: 0.15,
+    aoiStroke: '#2563eb',
+    aoiStrokeWidth: 2,
+    countryStroke: '#888888',
+    countryStrokeWidth: 0.8,
   },
 };
 
@@ -1160,7 +1306,35 @@ document.getElementById('export-confirm')!.addEventListener('click', async () =>
       });
     }
 
-    if (format === 'png') {
+    if (format === 'all') {
+      // Batch export: PDF + PNG + SVG
+      onProgress(10, 'Exporting PDF...');
+      const pdfBlob = await exportToPDF(layoutSVG, {
+        pageWidthMM: pageConfig.pageWidthMM,
+        pageHeightMM: pageConfig.pageHeightMM,
+        orientation: 'landscape',
+        dpi,
+        title: state.fields.title,
+        author: state.fields.author,
+        manifestJSON,
+        onProgress: (p, m) => onProgress(p * 0.4, m),
+      });
+      downloadBlob(pdfBlob, `${filename}.pdf`);
+
+      onProgress(45, 'Exporting PNG...');
+      const pngBlob = await exportToPNG(layoutSVG, {
+        dpi,
+        pageWidthMM: pageConfig.pageWidthMM,
+        pageHeightMM: pageConfig.pageHeightMM,
+        onProgress: (p, m) => onProgress(40 + p * 0.4, m),
+      });
+      downloadBlob(pngBlob, `${filename}.png`);
+
+      onProgress(85, 'Exporting SVG...');
+      const svgBlob = exportToSVG(layoutSVG);
+      downloadBlob(svgBlob, `${filename}.svg`);
+      onProgress(100, 'All formats exported!');
+    } else if (format === 'png') {
       const blob = await exportToPNG(layoutSVG, {
         dpi,
         pageWidthMM: pageConfig.pageWidthMM,
@@ -1389,6 +1563,18 @@ function parseTranslate(el: SVGElement): { x: number; y: number } {
 }
 
 function startElementDrag(e: MouseEvent, el: SVGElement, svg: SVGSVGElement): void {
+  // Check if element is locked
+  const ctId = el.getAttribute('data-custom-text');
+  const logoId = el.getAttribute('data-logo-image');
+  if (ctId) {
+    const ct = state.customTexts?.find(t => t.id === ctId);
+    if (ct?.locked) return;
+  }
+  if (logoId) {
+    const img = state.logoImages?.find(i => i.id === logoId);
+    if (img?.locked) return;
+  }
+
   e.preventDefault();
   e.stopPropagation();
   isDragging = true;
@@ -1399,8 +1585,21 @@ function startElementDrag(e: MouseEvent, el: SVGElement, svg: SVGSVGElement): vo
 
   const onMove = (ev: MouseEvent) => {
     const cur = screenToSVGPoint(svg, ev.clientX, ev.clientY);
-    const nx = origin.x + (cur.x - startSVG.x);
-    const ny = origin.y + (cur.y - startSVG.y);
+    let nx = origin.x + (cur.x - startSVG.x);
+    let ny = origin.y + (cur.y - startSVG.y);
+
+    // Snap to page guides (margins, center, edges)
+    const snapThreshold = 1.5; // mm
+    const guides = getSnapGuides();
+    let snappedX = false, snappedY = false;
+    for (const gx of guides.vertical) {
+      if (Math.abs(nx - gx) < snapThreshold) { nx = gx; snappedX = true; break; }
+    }
+    for (const gy of guides.horizontal) {
+      if (Math.abs(ny - gy) < snapThreshold) { ny = gy; snappedY = true; break; }
+    }
+    showSnapGuides(snappedX ? nx : null, snappedY ? ny : null);
+
     el.setAttribute('transform', `translate(${nx},${ny})`);
   };
 
@@ -1408,6 +1607,7 @@ function startElementDrag(e: MouseEvent, el: SVGElement, svg: SVGSVGElement): vo
     document.removeEventListener('mousemove', onMove);
     document.removeEventListener('mouseup', onUp);
     el.classList.remove('dragging');
+    hideSnapGuides();
 
     const final = screenToSVGPoint(svg, ev.clientX, ev.clientY);
     const nx = origin.x + (final.x - startSVG.x);
@@ -1450,13 +1650,14 @@ function startElementDrag(e: MouseEvent, el: SVGElement, svg: SVGSVGElement): vo
 
 /** Drag a drawing shape (moves x1/y1/x2/y2 by delta) */
 function startDrawingDrag(e: MouseEvent, el: SVGElement, svg: SVGSVGElement): void {
-  e.preventDefault();
-  e.stopPropagation();
-  isDragging = true;
-
   const drawId = el.getAttribute('data-drawing')!;
   const d = state.drawings?.find(d => d.id === drawId);
   if (!d) return;
+  if (d.locked) return;
+
+  e.preventDefault();
+  e.stopPropagation();
+  isDragging = true;
 
   const startSVG = screenToSVGPoint(svg, e.clientX, e.clientY);
   const origX1 = d.x1, origY1 = d.y1, origX2 = d.x2, origY2 = d.y2;
@@ -1632,10 +1833,13 @@ function addCustomTextAt(x: number, y: number): void {
     fontSize: 3,
     color: '#1a1a1a',
     fontWeight: 'normal',
+    fontStyle: 'normal',
+    fontFamily: "'Noto Sans', Arial, sans-serif",
   };
   state.customTexts!.push(ct);
   rebuildSVGOnly();
   renderCustomTextList();
+  pushHistory();
   // Auto-open editor for the new text
   setTimeout(() => {
     const svg = document.querySelector('#layout-svg-host svg') as SVGSVGElement;
@@ -1651,8 +1855,10 @@ function addCustomTextAt(x: number, y: number): void {
 function removeCustomText(id: string): void {
   state.customTexts = state.customTexts!.filter(ct => ct.id !== id);
   hideTextEditPopup();
+  clearSelection();
   rebuildSVGOnly();
   renderCustomTextList();
+  pushHistory();
 }
 
 /** Rebuild SVG without recapturing map images (fast, for drag/text changes) */
@@ -1705,6 +1911,9 @@ const teInput = document.getElementById('te-input') as HTMLInputElement;
 const teSize = document.getElementById('te-size') as HTMLInputElement;
 const teColor = document.getElementById('te-color') as HTMLInputElement;
 const teWeight = document.getElementById('te-weight') as HTMLSelectElement;
+const teStyle = document.getElementById('te-style') as HTMLSelectElement;
+const teFont = document.getElementById('te-font') as HTMLSelectElement;
+const teLock = document.getElementById('te-lock')!;
 const teDelete = document.getElementById('te-delete')!;
 
 function showTextEditPopup(ctId: string, e: MouseEvent): void {
@@ -1712,10 +1921,14 @@ function showTextEditPopup(ctId: string, e: MouseEvent): void {
   if (!ct) return;
 
   activeEditCTId = ctId;
+  selectElement(ctId, 'custom-text');
   teInput.value = ct.text;
   teSize.value = String(ct.fontSize);
   teColor.value = ct.color;
   teWeight.value = ct.fontWeight;
+  teStyle.value = ct.fontStyle || 'normal';
+  teFont.value = ct.fontFamily || "'Noto Sans', Arial, sans-serif";
+  teLock.classList.toggle('locked', !!ct.locked);
 
   // Position popup near the element
   const x = Math.min(e.clientX, window.innerWidth - 260);
@@ -1742,6 +1955,8 @@ function applyTextEdit(): void {
   ct.fontSize = parseFloat(teSize.value);
   ct.color = teColor.value;
   ct.fontWeight = teWeight.value as 'normal' | 'bold';
+  ct.fontStyle = teStyle.value as 'normal' | 'italic';
+  ct.fontFamily = teFont.value;
 
   rebuildSVGOnly();
   renderCustomTextList();
@@ -1751,6 +1966,18 @@ teInput.addEventListener('input', applyTextEdit);
 teSize.addEventListener('input', applyTextEdit);
 teColor.addEventListener('input', applyTextEdit);
 teWeight.addEventListener('change', applyTextEdit);
+teStyle.addEventListener('change', applyTextEdit);
+teFont.addEventListener('change', applyTextEdit);
+teLock.addEventListener('click', () => {
+  if (!activeEditCTId) return;
+  const ct = state.customTexts?.find(t => t.id === activeEditCTId);
+  if (ct) {
+    ct.locked = !ct.locked;
+    teLock.classList.toggle('locked', !!ct.locked);
+    rebuildSVGOnly();
+    pushHistory();
+  }
+});
 teDelete.addEventListener('click', () => {
   if (activeEditCTId) removeCustomText(activeEditCTId);
 });
@@ -1780,6 +2007,7 @@ const deStroke = document.getElementById('de-stroke') as HTMLInputElement;
 const deStrokeWidth = document.getElementById('de-stroke-width') as HTMLInputElement;
 const deFill = document.getElementById('de-fill') as HTMLInputElement;
 const deFillOpacity = document.getElementById('de-fill-opacity') as HTMLInputElement;
+const deLock = document.getElementById('de-lock')!;
 const deDelete = document.getElementById('de-delete')!;
 
 function initDrawingTools(): void {
@@ -1937,6 +2165,16 @@ function initDrawingTools(): void {
   deStrokeWidth.addEventListener('input', applyDrawingEdit);
   deFill.addEventListener('input', applyDrawingEdit);
   deFillOpacity.addEventListener('input', applyDrawingEdit);
+  deLock.addEventListener('click', () => {
+    if (!activeEditDrawingId) return;
+    const d = state.drawings?.find(d => d.id === activeEditDrawingId);
+    if (d) {
+      d.locked = !d.locked;
+      deLock.classList.toggle('locked', !!d.locked);
+      rebuildSVGOnly();
+      pushHistory();
+    }
+  });
   deDelete.addEventListener('click', () => {
     if (activeEditDrawingId) removeDrawing(activeEditDrawingId);
   });
@@ -1954,8 +2192,10 @@ function removeRubberBand(): void {
 function removeDrawing(id: string): void {
   state.drawings = state.drawings!.filter(d => d.id !== id);
   hideDrawingEditPopup();
+  clearSelection();
   rebuildSVGOnly();
   renderDrawingList();
+  pushHistory();
 }
 
 function renderDrawingList(): void {
@@ -1997,10 +2237,12 @@ function showDrawingEditPopup(drawingId: string, e: MouseEvent): void {
   if (!d) return;
 
   activeEditDrawingId = drawingId;
+  selectElement(drawingId, 'drawing');
   deStroke.value = d.strokeColor;
   deStrokeWidth.value = String(d.strokeWidth);
   deFill.value = d.fillColor;
   deFillOpacity.value = String(d.fillOpacity);
+  deLock.classList.toggle('locked', !!d.locked);
 
   const x = Math.min(e.clientX, window.innerWidth - 240);
   const y = Math.max(e.clientY - 80, 10);
@@ -2034,6 +2276,7 @@ let activeEditLogoId: string | null = null;
 const lePopup = document.getElementById('logo-edit-popup')!;
 const leWidth = document.getElementById('le-width') as HTMLInputElement;
 const leOpacity = document.getElementById('le-opacity') as HTMLInputElement;
+const leLock = document.getElementById('le-lock')!;
 const leDelete = document.getElementById('le-delete')!;
 
 function initLogoImport(): void {
@@ -2052,6 +2295,16 @@ function initLogoImport(): void {
   // Wire popup controls
   leWidth.addEventListener('input', applyLogoEdit);
   leOpacity.addEventListener('input', applyLogoEdit);
+  leLock.addEventListener('click', () => {
+    if (!activeEditLogoId) return;
+    const logo = state.logoImages?.find(i => i.id === activeEditLogoId);
+    if (logo) {
+      logo.locked = !logo.locked;
+      leLock.classList.toggle('locked', !!logo.locked);
+      rebuildSVGOnly();
+      pushHistory();
+    }
+  });
   leDelete.addEventListener('click', () => {
     if (activeEditLogoId) removeLogoImage(activeEditLogoId);
   });
@@ -2121,8 +2374,10 @@ function renderLogoList(): void {
 function removeLogoImage(id: string): void {
   state.logoImages = state.logoImages!.filter(i => i.id !== id);
   hideLogoEditPopup();
+  clearSelection();
   rebuildSVGOnly();
   renderLogoList();
+  pushHistory();
 }
 
 function showLogoEditPopup(logoId: string, e: MouseEvent): void {
@@ -2130,8 +2385,10 @@ function showLogoEditPopup(logoId: string, e: MouseEvent): void {
   if (!logo) return;
 
   activeEditLogoId = logoId;
+  selectElement(logoId, 'logo-image');
   leWidth.value = String(Math.round(logo.widthMM));
   leOpacity.value = String(logo.opacity);
+  leLock.classList.toggle('locked', !!logo.locked);
 
   const x = Math.min(e.clientX, window.innerWidth - 220);
   const y = Math.max(e.clientY - 80, 10);
@@ -2676,7 +2933,11 @@ function updatePageConfig(size: string, orientation: 'landscape' | 'portrait'): 
   const sizes: Record<string, { w: number; h: number }> = {
     A4: { w: 210, h: 297 },
     A3: { w: 297, h: 420 },
+    A2: { w: 420, h: 594 },
+    A1: { w: 594, h: 841 },
     Letter: { w: 215.9, h: 279.4 },
+    Tabloid: { w: 279.4, h: 431.8 },
+    B4: { w: 250, h: 353 },
   };
   const s = sizes[size] || sizes.A4;
 
@@ -3029,6 +3290,455 @@ function syncCountryClickToDropdown(iso3: string): void {
   }
 }
 
+// ─── i18n (Language Switching) ─────────────────────────────────────────
+
+function initI18n(): void {
+  const locale = initLocale();
+  const langSelect = document.getElementById('lang-select') as HTMLSelectElement;
+  langSelect.value = locale;
+
+  langSelect.addEventListener('change', () => {
+    const newLocale = langSelect.value as Locale;
+    setLocale(newLocale);
+    applyTranslations();
+  });
+
+  applyTranslations();
+}
+
+function applyTranslations(): void {
+  // Translate all elements with data-i18n attribute
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.getAttribute('data-i18n') as keyof TranslationStrings;
+    if (key) el.textContent = t(key);
+  });
+}
+
+// ─── Snap-to-Grid / Alignment Guides ──────────────────────────────────
+
+function getSnapGuides(): { vertical: number[]; horizontal: number[] } {
+  const m = pageConfig.marginMM;
+  const w = pageConfig.pageWidthMM;
+  const h = pageConfig.pageHeightMM;
+  return {
+    vertical: [m, w / 2, w - m, w / 4, 3 * w / 4],
+    horizontal: [m, h / 2, h - m, h / 4, 3 * h / 4],
+  };
+}
+
+let activeSnapGuideH: HTMLElement | null = null;
+let activeSnapGuideV: HTMLElement | null = null;
+
+function showSnapGuides(snapX: number | null, snapY: number | null): void {
+  const host = document.getElementById('layout-svg-host')!;
+
+  if (snapX !== null) {
+    if (!activeSnapGuideV) {
+      activeSnapGuideV = document.createElement('div');
+      activeSnapGuideV.className = 'snap-guide snap-guide-v';
+      host.appendChild(activeSnapGuideV);
+    }
+    const pxX = (snapX / pageConfig.pageWidthMM) * host.clientWidth;
+    activeSnapGuideV.style.left = `${pxX}px`;
+    activeSnapGuideV.style.display = '';
+  } else if (activeSnapGuideV) {
+    activeSnapGuideV.style.display = 'none';
+  }
+
+  if (snapY !== null) {
+    if (!activeSnapGuideH) {
+      activeSnapGuideH = document.createElement('div');
+      activeSnapGuideH.className = 'snap-guide snap-guide-h';
+      host.appendChild(activeSnapGuideH);
+    }
+    const pxY = (snapY / pageConfig.pageHeightMM) * host.clientHeight;
+    activeSnapGuideH.style.top = `${pxY}px`;
+    activeSnapGuideH.style.display = '';
+  } else if (activeSnapGuideH) {
+    activeSnapGuideH.style.display = 'none';
+  }
+}
+
+function hideSnapGuides(): void {
+  if (activeSnapGuideH) { activeSnapGuideH.remove(); activeSnapGuideH = null; }
+  if (activeSnapGuideV) { activeSnapGuideV.remove(); activeSnapGuideV = null; }
+}
+
+// ─── Dark Mode ────────────────────────────────────────────────────────
+
+function initDarkMode(): void {
+  const btn = document.getElementById('btn-dark-mode')!;
+  // Restore preference
+  const saved = localStorage.getItem('maplayout-dark-mode');
+  if (saved === 'true') document.documentElement.classList.add('dark');
+
+  btn.addEventListener('click', toggleDarkMode);
+}
+
+function toggleDarkMode(): void {
+  const isDark = document.documentElement.classList.toggle('dark');
+  localStorage.setItem('maplayout-dark-mode', String(isDark));
+}
+
+// ─── Save / Load Project ─────────────────────────────────────────────
+
+function initSaveLoad(): void {
+  document.getElementById('btn-save-project')!.addEventListener('click', saveProject);
+  const loadBtn = document.getElementById('btn-load-project')!;
+  const fileInput = document.getElementById('project-file-input') as HTMLInputElement;
+  loadBtn.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files?.length) {
+      loadProject(fileInput.files[0]);
+      fileInput.value = '';
+    }
+  });
+}
+
+function saveProject(): void {
+  readFieldsFromUI();
+  const project = {
+    version: '1.2.0',
+    savedAt: new Date().toISOString(),
+    pageConfig: { ...pageConfig },
+    fields: { ...state.fields },
+    elementOverrides: state.elementOverrides,
+    customTexts: state.customTexts,
+    drawings: state.drawings,
+    logoImages: state.logoImages,
+    grid: state.grid,
+    boundaryColors: state.boundaryColors,
+    customLegendEntries: state.customLegendEntries,
+    activeLayers: state.activeLayers,
+    aoi: state.aoi ? {
+      type: state.aoi.type,
+      name: state.aoi.name,
+      bbox: state.aoi.bbox,
+      centroid: state.aoi.centroid,
+      adminLevel: state.aoi.adminLevel,
+      parentCountryISO3: state.aoi.parentCountryISO3,
+      parentStateName: state.aoi.parentStateName,
+    } : null,
+  };
+  const json = JSON.stringify(project, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const filename = `${state.fields.title || 'layout'}_${state.fields.date}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+  downloadBlob(blob, `${filename}.maplayout`);
+  updateStatus('Project saved!');
+}
+
+function loadProject(file: File): void {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const project = JSON.parse(reader.result as string);
+
+      // Restore page config
+      if (project.pageConfig) {
+        pageConfig.pageWidthMM = project.pageConfig.pageWidthMM;
+        pageConfig.pageHeightMM = project.pageConfig.pageHeightMM;
+        pageConfig.marginMM = project.pageConfig.marginMM;
+      }
+
+      // Restore state
+      if (project.fields) state.fields = project.fields;
+      if (project.elementOverrides) state.elementOverrides = project.elementOverrides;
+      if (project.customTexts) state.customTexts = project.customTexts;
+      if (project.drawings) state.drawings = project.drawings;
+      if (project.logoImages) state.logoImages = project.logoImages;
+      if (project.grid) state.grid = project.grid;
+      if (project.boundaryColors) state.boundaryColors = project.boundaryColors;
+      if (project.customLegendEntries) state.customLegendEntries = project.customLegendEntries;
+      if (project.activeLayers) state.activeLayers = project.activeLayers;
+
+      syncUIFromState();
+      renderLegendEntryList();
+
+      if (state.aoi) {
+        rebuildSVGOnly();
+      }
+
+      updateStatus(`Project loaded: ${file.name}`);
+      pushHistory();
+    } catch (err) {
+      console.error('Failed to load project:', err);
+      alert(`Failed to load project: ${(err as Error).message}`);
+    }
+  };
+  reader.readAsText(file);
+}
+
+// ─── Keyboard Shortcuts ──────────────────────────────────────────────
+
+function initKeyboardShortcuts(): void {
+  document.addEventListener('keydown', (e: KeyboardEvent) => {
+    // Don't intercept when user is typing in an input/textarea
+    const tag = (e.target as HTMLElement).tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+      // But still handle Escape to close popups
+      if (e.key === 'Escape') {
+        hideTextEditPopup();
+        hideDrawingEditPopup();
+        hideLogoEditPopup();
+        clearSelection();
+      }
+      return;
+    }
+
+    // Ctrl+Z → Undo
+    if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+      e.preventDefault();
+      undo();
+      return;
+    }
+
+    // Ctrl+Y or Ctrl+Shift+Z → Redo
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+      e.preventDefault();
+      redo();
+      return;
+    }
+
+    // Ctrl+S → Save
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+      e.preventDefault();
+      saveProject();
+      return;
+    }
+
+    // D → Toggle dark mode
+    if (e.key === 'd' || e.key === 'D') {
+      toggleDarkMode();
+      return;
+    }
+
+    // Escape → Close popups, deselect
+    if (e.key === 'Escape') {
+      hideTextEditPopup();
+      hideDrawingEditPopup();
+      hideLogoEditPopup();
+      clearSelection();
+      return;
+    }
+
+    // Delete / Backspace → Delete selected element
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      if (selectedElementId && selectedElementType) {
+        if (selectedElementType === 'custom-text') {
+          removeCustomText(selectedElementId);
+        } else if (selectedElementType === 'drawing') {
+          removeDrawing(selectedElementId);
+        } else if (selectedElementType === 'logo-image') {
+          removeLogoImage(selectedElementId);
+        }
+        pushHistory();
+      }
+      return;
+    }
+
+    // L → Toggle lock on selected element
+    if (e.key === 'l' || e.key === 'L') {
+      toggleSelectedLock();
+      return;
+    }
+
+    // Arrow keys → Nudge selected element
+    const nudgeMap: Record<string, { dx: number; dy: number }> = {
+      ArrowUp: { dx: 0, dy: -0.5 },
+      ArrowDown: { dx: 0, dy: 0.5 },
+      ArrowLeft: { dx: -0.5, dy: 0 },
+      ArrowRight: { dx: 0.5, dy: 0 },
+    };
+    if (nudgeMap[e.key] && selectedElementId) {
+      e.preventDefault();
+      nudgeSelected(nudgeMap[e.key].dx, nudgeMap[e.key].dy);
+      return;
+    }
+
+    // + / - → Resize selected (for scalable elements)
+    if ((e.key === '+' || e.key === '=') && selectedElementId) {
+      resizeSelected(1);
+      return;
+    }
+    if (e.key === '-' && selectedElementId) {
+      resizeSelected(-1);
+      return;
+    }
+  });
+}
+
+function nudgeSelected(dx: number, dy: number): void {
+  if (!selectedElementId || !selectedElementType) return;
+
+  if (selectedElementType === 'custom-text') {
+    const ct = state.customTexts?.find(t => t.id === selectedElementId);
+    if (ct && !ct.locked) {
+      ct.position.x += dx;
+      ct.position.y += dy;
+      rebuildSVGOnly();
+    }
+  } else if (selectedElementType === 'logo-image') {
+    const img = state.logoImages?.find(i => i.id === selectedElementId);
+    if (img && !img.locked) {
+      img.position.x += dx;
+      img.position.y += dy;
+      rebuildSVGOnly();
+    }
+  } else if (selectedElementType === 'drawing') {
+    const d = state.drawings?.find(d => d.id === selectedElementId);
+    if (d && !d.locked) {
+      d.x1 += dx; d.y1 += dy;
+      d.x2 += dx; d.y2 += dy;
+      rebuildSVGOnly();
+    }
+  } else if (selectedElementType === 'element') {
+    const ov = state.elementOverrides;
+    if (ov && selectedElementId in ov) {
+      const entry = ov[selectedElementId as keyof ElementOverrides];
+      if ('position' in entry) {
+        entry.position.x += dx;
+        entry.position.y += dy;
+        rebuildSVGOnly();
+      }
+    }
+  }
+}
+
+function resizeSelected(delta: number): void {
+  if (!selectedElementId || !selectedElementType) return;
+
+  if (selectedElementType === 'logo-image') {
+    const img = state.logoImages?.find(i => i.id === selectedElementId);
+    if (img) {
+      img.widthMM = Math.max(5, Math.min(150, img.widthMM + delta));
+      img.heightMM = img.widthMM / img.aspectRatio;
+      rebuildSVGOnly();
+    }
+  } else if (selectedElementType === 'custom-text') {
+    const ct = state.customTexts?.find(t => t.id === selectedElementId);
+    if (ct) {
+      ct.fontSize = Math.max(1.5, Math.min(12, ct.fontSize + delta * 0.5));
+      rebuildSVGOnly();
+    }
+  }
+}
+
+function toggleSelectedLock(): void {
+  if (!selectedElementId || !selectedElementType) return;
+
+  if (selectedElementType === 'custom-text') {
+    const ct = state.customTexts?.find(t => t.id === selectedElementId);
+    if (ct) { ct.locked = !ct.locked; rebuildSVGOnly(); }
+  } else if (selectedElementType === 'drawing') {
+    const d = state.drawings?.find(d => d.id === selectedElementId);
+    if (d) { d.locked = !d.locked; rebuildSVGOnly(); }
+  } else if (selectedElementType === 'logo-image') {
+    const img = state.logoImages?.find(i => i.id === selectedElementId);
+    if (img) { img.locked = !img.locked; rebuildSVGOnly(); }
+  }
+  pushHistory();
+}
+
+// ─── Page Size Presets ───────────────────────────────────────────────
+
+function initPagePresets(): void {
+  const presetsContainer = document.getElementById('page-presets')!;
+  presetsContainer.addEventListener('click', (e) => {
+    const btn = (e.target as Element).closest('.preset-btn') as HTMLElement;
+    if (!btn) return;
+
+    const preset = btn.dataset.preset!;
+    const [size, orientation] = preset.split('-') as [string, 'landscape' | 'portrait'];
+
+    // Update dropdowns
+    (document.getElementById('page-size') as HTMLSelectElement).value = size;
+    (document.getElementById('page-orientation') as HTMLSelectElement).value = orientation;
+
+    // Update active state
+    presetsContainer.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+
+    updatePageConfig(size, orientation);
+  });
+}
+
+// ─── Boundary Colors ─────────────────────────────────────────────────
+
+function initBoundaryColors(): void {
+  const ids = ['bc-aoi-fill', 'bc-aoi-fill-opacity', 'bc-aoi-stroke', 'bc-aoi-stroke-width', 'bc-country-stroke', 'bc-country-stroke-width'];
+  for (const id of ids) {
+    document.getElementById(id)!.addEventListener('input', applyBoundaryColors);
+  }
+}
+
+function applyBoundaryColors(): void {
+  const bc: BoundaryColorSettings = {
+    aoiFill: (document.getElementById('bc-aoi-fill') as HTMLInputElement).value,
+    aoiFillOpacity: parseFloat((document.getElementById('bc-aoi-fill-opacity') as HTMLInputElement).value),
+    aoiStroke: (document.getElementById('bc-aoi-stroke') as HTMLInputElement).value,
+    aoiStrokeWidth: parseFloat((document.getElementById('bc-aoi-stroke-width') as HTMLInputElement).value),
+    countryStroke: (document.getElementById('bc-country-stroke') as HTMLInputElement).value,
+    countryStrokeWidth: parseFloat((document.getElementById('bc-country-stroke-width') as HTMLInputElement).value),
+  };
+  state.boundaryColors = bc;
+
+  // Apply to map live
+  if (map.getLayer('aoi-fill')) {
+    map.setPaintProperty('aoi-fill', 'fill-color', bc.aoiFill);
+    map.setPaintProperty('aoi-fill', 'fill-opacity', bc.aoiFillOpacity);
+  }
+  if (map.getLayer('aoi-border')) {
+    map.setPaintProperty('aoi-border', 'line-color', bc.aoiStroke);
+    map.setPaintProperty('aoi-border', 'line-width', bc.aoiStrokeWidth);
+  }
+  if (map.getLayer('countries-border')) {
+    map.setPaintProperty('countries-border', 'line-color', bc.countryStroke);
+    map.setPaintProperty('countries-border', 'line-width', bc.countryStrokeWidth);
+  }
+}
+
+// ─── Coordinate Display ──────────────────────────────────────────────
+
+function initCoordDisplay(): void {
+  const coordText = document.getElementById('coord-text')!;
+  map.on('mousemove', (e) => {
+    const { lng, lat } = e.lngLat;
+    const latDir = lat >= 0 ? 'N' : 'S';
+    const lngDir = lng >= 0 ? 'E' : 'W';
+    coordText.textContent = `${Math.abs(lat).toFixed(4)}° ${latDir}, ${Math.abs(lng).toFixed(4)}° ${lngDir}`;
+  });
+  map.on('mouseleave', () => {
+    coordText.textContent = '--';
+  });
+}
+
+// ─── Shortcuts Modal ─────────────────────────────────────────────────
+
+function initShortcutsModal(): void {
+  const modal = document.getElementById('shortcuts-modal')!;
+  document.getElementById('btn-shortcuts')!.addEventListener('click', () => {
+    modal.classList.remove('hidden');
+  });
+  document.getElementById('shortcuts-close')!.addEventListener('click', () => {
+    modal.classList.add('hidden');
+  });
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) modal.classList.add('hidden');
+  });
+}
+
+// ─── Push history after mutations ─────────────────────────────────────
+
+/** Wrap rebuildSVGOnly to also push history on meaningful changes */
+const originalRebuildSVGOnly = rebuildSVGOnly;
+
+/** Debounced history push — called after user interactions settle */
+let historyPushTimeout: ReturnType<typeof setTimeout> | null = null;
+function debouncedHistoryPush(): void {
+  if (historyPushTimeout) clearTimeout(historyPushTimeout);
+  historyPushTimeout = setTimeout(() => pushHistory(), 800);
+}
+
 // ─── Initialize ──────────────────────────────────────────────────────
 
 initMap()
@@ -3042,7 +3752,19 @@ initMap()
     initDataImport();
     initDrawingTools();
     initLogoImport();
+    initDarkMode();
+    initSaveLoad();
+    initKeyboardShortcuts();
+    initPagePresets();
+    initBoundaryColors();
+    initCoordDisplay();
+    initShortcutsModal();
+    initI18n();
     handleURLParams();
+
+    // Initial history snapshot
+    pushHistory();
+
     console.log('[MapLayout Pro] Designer initialized');
   })
   .catch((err) => {

@@ -31,6 +31,7 @@ function svgText(
     fontSize?: number;
     fontFamily?: string;
     fontWeight?: string;
+    fontStyle?: string;
     fill?: string;
     anchor?: string;
   } = {}
@@ -41,6 +42,7 @@ function svgText(
     'font-size': opts.fontSize ?? 3,
     'font-family': opts.fontFamily ?? "'Noto Sans', Arial, Helvetica, sans-serif",
     'font-weight': opts.fontWeight ?? 'normal',
+    'font-style': opts.fontStyle ?? 'normal',
     fill: opts.fill ?? '#1a1a1a',
     'text-anchor': opts.anchor ?? 'start',
   }) as SVGTextElement;
@@ -245,10 +247,13 @@ export function buildLayoutSVG(state: LayoutState, config: LayoutConfig): SVGSVG
         const ctGroup = svgEl('g', {
           'data-custom-text': ct.id,
           transform: `translate(${ct.position.x},${ct.position.y})`,
+          ...(ct.locked ? { 'data-locked': 'true' } : {}),
         });
         ctGroup.appendChild(svgText(0, 0, ct.text, {
           fontSize: ct.fontSize,
           fontWeight: ct.fontWeight,
+          fontStyle: ct.fontStyle || 'normal',
+          fontFamily: ct.fontFamily || "'Noto Sans', Arial, Helvetica, sans-serif",
           fill: ct.color,
         }));
         svg.appendChild(ctGroup);
@@ -928,7 +933,7 @@ function buildCoordinateGrid(
 
 /** Build a drawing annotation shape */
 function buildDrawingShape(d: DrawingAnnotation): SVGElement {
-  const g = svgEl('g', { 'data-drawing': d.id });
+  const g = svgEl('g', { 'data-drawing': d.id, ...(d.locked ? { 'data-locked': 'true' } : {}) });
 
   const commonStroke: Record<string, string | number> = {
     stroke: d.strokeColor,
@@ -1043,6 +1048,7 @@ function buildImageAnnotation(img: ImageAnnotation): SVGElement {
   const g = svgEl('g', {
     'data-logo-image': img.id,
     transform: `translate(${img.position.x},${img.position.y})`,
+    ...(img.locked ? { 'data-locked': 'true' } : {}),
   });
 
   const imageEl = svgEl('image', {

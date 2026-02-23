@@ -1388,6 +1388,274 @@ html, body {
   background: var(--accent-light);
 }
 
+/* ── Language Selector ── */
+.toolbar-lang-select {
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  outline: none;
+}
+
+.toolbar-lang-select:focus {
+  border-color: var(--border-focus);
+}
+
+/* ── Page Presets ── */
+.page-presets {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.preset-btn {
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg-secondary);
+  font-size: 10px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.preset-btn:hover { background: var(--bg-tertiary); border-color: var(--text-muted); }
+.preset-btn.active { border-color: var(--accent); color: var(--accent); background: var(--accent-light); }
+
+/* ── Boundary Colors ── */
+.boundary-color-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.boundary-color-row label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  width: 50px;
+  flex-shrink: 0;
+}
+
+.boundary-color-row input[type="color"] {
+  width: 22px;
+  height: 20px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px;
+  cursor: pointer;
+  background: none;
+  flex-shrink: 0;
+}
+
+.boundary-color-row input[type="range"] {
+  flex: 1;
+  height: 4px;
+  min-width: 40px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--bg-tertiary);
+  border-radius: 2px;
+  outline: none;
+}
+
+.boundary-color-row input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+}
+
+.boundary-color-row input[type="number"] {
+  width: 46px;
+  padding: 2px 3px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-size: 10px;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  outline: none;
+  flex-shrink: 0;
+}
+
+/* ── Coordinate Display ── */
+.coord-display {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15, 23, 42, 0.8);
+  color: #e2e8f0;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-family: 'Courier New', monospace;
+  pointer-events: none;
+  z-index: 10;
+  white-space: nowrap;
+}
+
+/* ── Lock button ── */
+.te-lock-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px 4px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.te-lock-btn:hover { color: var(--accent); border-color: var(--accent); }
+.te-lock-btn.locked { color: var(--danger); border-color: var(--danger); }
+
+/* ── Text edit font select ── */
+.te-font-select {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  padding: 2px 4px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+/* ── Keyboard Shortcuts Modal ── */
+.shortcuts-modal {
+  width: 400px;
+}
+
+.shortcuts-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.shortcut-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.shortcut-item kbd {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-size: 10px;
+  font-family: 'Courier New', monospace;
+  color: var(--text-primary);
+  white-space: nowrap;
+  min-width: 40px;
+  text-align: center;
+}
+
+/* ── Snap Alignment Guides ── */
+.snap-guide {
+  position: absolute;
+  z-index: 100;
+  pointer-events: none;
+}
+
+.snap-guide-h {
+  left: 0;
+  right: 0;
+  height: 1px;
+  border-top: 1px dashed var(--accent);
+  opacity: 0.7;
+}
+
+.snap-guide-v {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  border-left: 1px dashed var(--accent);
+  opacity: 0.7;
+}
+
+/* ── Element selection highlight ── */
+[data-element].selected,
+[data-custom-text].selected,
+[data-drawing].selected,
+[data-logo-image].selected {
+  filter: drop-shadow(0 0 3px rgba(37, 99, 235, 0.8));
+  outline: none;
+}
+
+/* Locked elements */
+[data-locked="true"] {
+  cursor: not-allowed !important;
+  opacity: 0.85;
+}
+
+/* ── Dark Mode ── */
+html.dark {
+  --bg-primary: #1e293b;
+  --bg-secondary: #0f172a;
+  --bg-tertiary: #334155;
+  --border: #475569;
+  --border-focus: #60a5fa;
+  --text-primary: #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --text-muted: #64748b;
+  --accent: #3b82f6;
+  --accent-hover: #2563eb;
+  --accent-light: rgba(59, 130, 246, 0.15);
+  --danger: #f87171;
+  --success: #4ade80;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+html.dark .layout-svg-host {
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.5);
+}
+
+html.dark .map-mode-indicator {
+  background: rgba(15, 23, 42, 0.92);
+  color: var(--text-secondary);
+}
+
+html.dark .layout-preview-container {
+  background: #1a1a2e;
+}
+
+html.dark .dropzone {
+  border-color: var(--border);
+}
+
+html.dark .toolbar-btn.btn-accent {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+html.dark .preset-btn.active {
+  background: var(--accent-light);
+}
+
+html.dark .maplibregl-ctrl button {
+  background-color: var(--bg-primary);
+  border-color: var(--border);
+}
+
+html.dark .shortcut-item kbd {
+  background: var(--bg-secondary);
+}
+
 /* ── Utility ── */
 .hidden { display: none !important; }
 
