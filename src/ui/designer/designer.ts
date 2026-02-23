@@ -15,10 +15,11 @@ import { exportToPNG, downloadBlob } from '@core/export/PNGExporter';
 import { exportToPDF, exportToSVG } from '@core/export/PDFExporter';
 import { loadBoundaries, findCountryByName, loadAdminBoundaries, getCountryISO3 } from '@core/data/BoundaryLoader';
 import { SearchableDropdown, type DropdownOption } from '@ui/components/SearchableDropdown';
+import { BASEMAP_CATALOG, getBasemapById, DEFAULT_BASEMAP_ID, type BasemapDefinition } from '@core/data/basemaps';
 import { parseUserFile } from '@core/data/UserDataLoader';
 import { getLayerColor } from '@core/data/defaultLayerStyles';
 import type { UserDataLayer } from '@core/types/userdata';
-import type { LayoutState, ElementOverrides, CustomTextAnnotation, LegendEntry, DrawingAnnotation, DrawingShapeType } from '@core/types/layout';
+import type { LayoutState, ElementOverrides, CustomTextAnnotation, LegendEntry, DrawingAnnotation, DrawingShapeType, ImageAnnotation } from '@core/types/layout';
 import type { AOISelection, BBox, LngLat } from '@core/types/geo';
 
 // ─── State ───────────────────────────────────────────────────────────
@@ -43,6 +44,7 @@ const state: LayoutState = {
   userLayers: [],
   customLegendEntries: undefined,
   drawings: [],
+  logoImages: [],
   grid: {
     visible: false,
     color: '#333333',
@@ -66,6 +68,10 @@ let cachedAdminStates: GeoJSON.FeatureCollection | null = null;
 let cachedAdminDistricts: GeoJSON.FeatureCollection | null = null;
 let currentCountryISO3: string | null = null;
 let currentStateName: string | null = null;
+
+// Basemap selector state
+let basemapSelector: SearchableDropdown;
+let currentBasemapId: string = DEFAULT_BASEMAP_ID;
 
 // Parent boundaries for inset map captures
 let parentCountryBBox: BBox | null = null;
@@ -95,29 +101,22 @@ const mapFramePanOffsets = {
 // ─── Map Initialization ──────────────────────────────────────────────
 
 async function initMap(): Promise<void> {
+  const defaultBasemap = getBasemapById(DEFAULT_BASEMAP_ID)!;
   map = new maplibregl.Map({
     container: 'map',
     style: {
       version: 8,
       name: 'MapLayout Basemap',
       sources: {
-        'osm-tiles': {
-          type: 'raster',
-          tiles: [
-            'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-          ],
-          tileSize: 256,
-          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-          maxzoom: 19,
-        },
+        'basemap-source': buildBasemapSource(defaultBasemap),
       },
       layers: [
         {
-          id: 'osm-basemap',
+          id: 'basemap-layer',
           type: 'raster',
-          source: 'osm-tiles',
-          minzoom: 0,
-          maxzoom: 19,
+          source: 'basemap-source',
+          minzoom: defaultBasemap.minzoom,
+          maxzoom: defaultBasemap.maxzoom,
         },
       ],
     },
@@ -346,6 +345,7 @@ async function renderLayoutPreview(): Promise<void> {
   attachDragHandlers();
   renderCustomTextList();
   renderDrawingList();
+  renderLogoList();
 
   updateStatus('Layout preview ready. Drag elements to reposition. Double-click to add text.');
 
@@ -772,6 +772,7 @@ document.getElementById('layer-list')!.addEventListener('change', (e) => {
 
   // Toggle map layer visibility
   const mapLayerIds: Record<string, string[]> = {
+    basemap: ['basemap-layer'],
     boundaries: ['countries-fill', 'countries-border'],
   };
   const mapLayers = mapLayerIds[layerId];
@@ -1115,6 +1116,18 @@ document.getElementById('export-cancel')!.addEventListener('click', () => {
   exportModal.classList.add('hidden');
 });
 
+// About modal
+const aboutModal = document.getElementById('about-modal')!;
+document.getElementById('btn-about')!.addEventListener('click', () => {
+  aboutModal.classList.remove('hidden');
+});
+document.getElementById('about-close')!.addEventListener('click', () => {
+  aboutModal.classList.add('hidden');
+});
+aboutModal.addEventListener('click', (e) => {
+  if (e.target === aboutModal) aboutModal.classList.add('hidden');
+});
+
 document.getElementById('export-confirm')!.addEventListener('click', async () => {
   if (!layoutSVG) return;
 
@@ -1418,6 +1431,15 @@ function startElementDrag(e: MouseEvent, el: SVGElement, svg: SVGSVGElement): vo
       }
     }
 
+    const logoImageId = el.getAttribute('data-logo-image');
+    if (logoImageId) {
+      const img = state.logoImages?.find(i => i.id === logoImageId);
+      if (img) {
+        img.position.x = nx;
+        img.position.y = ny;
+      }
+    }
+
     // Brief delay so the click event from mouseup doesn't trigger dblclick
     setTimeout(() => { isDragging = false; }, 100);
   };
@@ -1549,6 +1571,19 @@ function attachDragHandlers(): void {
     });
   });
 
+  // Make logo images draggable + clickable for editing
+  svg.querySelectorAll('[data-logo-image]').forEach(el => {
+    el.addEventListener('mousedown', (e) => {
+      startElementDrag(e as MouseEvent, el as SVGElement, svg);
+    });
+    el.addEventListener('click', (e) => {
+      if (isDragging) return;
+      e.stopPropagation();
+      const logoId = el.getAttribute('data-logo-image')!;
+      showLogoEditPopup(logoId, e as MouseEvent);
+    });
+  });
+
   // Make drawings draggable + clickable for editing
   svg.querySelectorAll('[data-drawing]').forEach(el => {
     el.addEventListener('mousedown', (e) => {
@@ -1570,7 +1605,7 @@ function attachDragHandlers(): void {
       const me = e as MouseEvent;
       // Don't hijack clicks on draggable layout elements, custom text, or drawings inside the frame
       const target = me.target as Element;
-      if (target.closest('[data-element]') || target.closest('[data-custom-text]') || target.closest('[data-drawing]')) return;
+      if (target.closest('[data-element]') || target.closest('[data-custom-text]') || target.closest('[data-drawing]') || target.closest('[data-logo-image]')) return;
       startMapFramePan(me, el as SVGElement, svg);
     });
   });
@@ -1580,7 +1615,7 @@ function attachDragHandlers(): void {
     if (isDragging || activeDrawTool) return;
     // Don't trigger if clicking on an existing element
     const target = e.target as Element;
-    if (target.closest('[data-element]') || target.closest('[data-custom-text]') || target.closest('[data-drawing]')) return;
+    if (target.closest('[data-element]') || target.closest('[data-custom-text]') || target.closest('[data-drawing]') || target.closest('[data-logo-image]')) return;
 
     const pos = screenToSVGPoint(svg, e.clientX, e.clientY);
     addCustomTextAt(pos.x, pos.y);
@@ -1727,6 +1762,9 @@ document.addEventListener('mousedown', (e) => {
   }
   if (activeEditDrawingId && !dePopup.contains(e.target as Node)) {
     hideDrawingEditPopup();
+  }
+  if (activeEditLogoId && !lePopup.contains(e.target as Node)) {
+    hideLogoEditPopup();
   }
 });
 
@@ -1990,13 +2028,159 @@ function applyDrawingEdit(): void {
   renderDrawingList();
 }
 
-// ─── Wheel Resize (North Arrow / Legend) ──────────────────────────────
+// ─── Logo / Image Overlay ──────────────────────────────────────────────
+
+let activeEditLogoId: string | null = null;
+const lePopup = document.getElementById('logo-edit-popup')!;
+const leWidth = document.getElementById('le-width') as HTMLInputElement;
+const leOpacity = document.getElementById('le-opacity') as HTMLInputElement;
+const leDelete = document.getElementById('le-delete')!;
+
+function initLogoImport(): void {
+  const btn = document.getElementById('btn-add-logo')!;
+  const fileInput = document.getElementById('logo-file-input') as HTMLInputElement;
+
+  btn.addEventListener('click', () => fileInput.click());
+
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files?.length) {
+      handleLogoFile(fileInput.files[0]);
+      fileInput.value = '';
+    }
+  });
+
+  // Wire popup controls
+  leWidth.addEventListener('input', applyLogoEdit);
+  leOpacity.addEventListener('input', applyLogoEdit);
+  leDelete.addEventListener('click', () => {
+    if (activeEditLogoId) removeLogoImage(activeEditLogoId);
+  });
+}
+
+function handleLogoFile(file: File): void {
+  const reader = new FileReader();
+  reader.onload = () => {
+    const dataUrl = reader.result as string;
+    const img = new Image();
+    img.onload = () => {
+      const aspectRatio = img.naturalWidth / img.naturalHeight;
+      const widthMM = 30;
+      const heightMM = widthMM / aspectRatio;
+
+      const annotation: ImageAnnotation = {
+        id: `logo-${Date.now()}`,
+        name: file.name,
+        dataUrl,
+        position: {
+          x: pageConfig.pageWidthMM - pageConfig.marginMM - widthMM - 2,
+          y: pageConfig.pageHeightMM - pageConfig.marginMM - heightMM - 8,
+        },
+        widthMM,
+        heightMM,
+        opacity: 1,
+        aspectRatio,
+      };
+
+      state.logoImages!.push(annotation);
+      rebuildSVGOnly();
+      renderLogoList();
+    };
+    img.src = dataUrl;
+  };
+  reader.readAsDataURL(file);
+}
+
+function renderLogoList(): void {
+  const container = document.getElementById('logo-image-list')!;
+  container.innerHTML = '';
+
+  for (const logo of state.logoImages!) {
+    const div = document.createElement('div');
+    div.className = 'logo-image-item';
+    div.innerHTML = `
+      <img class="logo-thumb" src="${logo.dataUrl}" alt="${escapeHtml(logo.name)}">
+      <span class="logo-name">${escapeHtml(logo.name)}</span>
+      <button class="logo-remove-btn" title="Delete">&times;</button>
+    `;
+    div.querySelector('.logo-remove-btn')!.addEventListener('click', (e) => {
+      e.stopPropagation();
+      removeLogoImage(logo.id);
+    });
+    div.addEventListener('click', () => {
+      const svg = document.querySelector('#layout-svg-host svg') as SVGSVGElement;
+      const el = svg?.querySelector(`[data-logo-image="${logo.id}"]`);
+      if (el) {
+        const rect = el.getBoundingClientRect();
+        showLogoEditPopup(logo.id, { clientX: rect.left + rect.width / 2, clientY: rect.top } as MouseEvent);
+      }
+    });
+    container.appendChild(div);
+  }
+}
+
+function removeLogoImage(id: string): void {
+  state.logoImages = state.logoImages!.filter(i => i.id !== id);
+  hideLogoEditPopup();
+  rebuildSVGOnly();
+  renderLogoList();
+}
+
+function showLogoEditPopup(logoId: string, e: MouseEvent): void {
+  const logo = state.logoImages?.find(i => i.id === logoId);
+  if (!logo) return;
+
+  activeEditLogoId = logoId;
+  leWidth.value = String(Math.round(logo.widthMM));
+  leOpacity.value = String(logo.opacity);
+
+  const x = Math.min(e.clientX, window.innerWidth - 220);
+  const y = Math.max(e.clientY - 80, 10);
+  lePopup.style.left = `${x}px`;
+  lePopup.style.top = `${y}px`;
+  lePopup.classList.remove('hidden');
+}
+
+function hideLogoEditPopup(): void {
+  lePopup.classList.add('hidden');
+  activeEditLogoId = null;
+}
+
+function applyLogoEdit(): void {
+  if (!activeEditLogoId) return;
+  const logo = state.logoImages?.find(i => i.id === activeEditLogoId);
+  if (!logo) return;
+
+  logo.widthMM = Math.max(5, Math.min(150, parseFloat(leWidth.value) || 30));
+  logo.heightMM = logo.widthMM / logo.aspectRatio;
+  logo.opacity = parseFloat(leOpacity.value);
+
+  rebuildSVGOnly();
+}
+
+// ─── Wheel Resize (North Arrow / Legend / Logo) ───────────────────────
 
 function initWheelResize(): void {
   const scrollContainer = document.getElementById('preview-scroll')!;
   scrollContainer.addEventListener('wheel', (e: WheelEvent) => {
     // Check if the mouse is over a scalable SVG element using event delegation
     const target = e.target as Element;
+
+    // Logo image resize (scroll wheel)
+    const logoEl = target.closest?.('[data-logo-image]');
+    if (logoEl) {
+      e.preventDefault();
+      e.stopPropagation();
+      const id = logoEl.getAttribute('data-logo-image')!;
+      const img = state.logoImages?.find(i => i.id === id);
+      if (img) {
+        const delta = e.deltaY > 0 ? -1 : 1;
+        img.widthMM = Math.max(5, Math.min(150, img.widthMM + delta));
+        img.heightMM = img.widthMM / img.aspectRatio;
+        rebuildSVGOnly();
+      }
+      return;
+    }
+
     const scalableEl = target.closest?.('[data-element="northArrow"], [data-element="legend"]');
     if (!scalableEl) return;
 
@@ -2510,6 +2694,68 @@ function updatePageConfig(size: string, orientation: 'landscape' | 'portrait'): 
   if (state.aoi) renderLayoutPreview();
 }
 
+// ─── Basemap Switching ────────────────────────────────────────────────
+
+function buildBasemapSource(basemap: BasemapDefinition): maplibregl.RasterSourceSpecification {
+  return {
+    type: 'raster',
+    tiles: basemap.tiles,
+    tileSize: basemap.tileSize,
+    attribution: basemap.attribution,
+    maxzoom: basemap.maxzoom,
+  };
+}
+
+function switchBasemap(id: string): void {
+  const basemap = getBasemapById(id);
+  if (!basemap || id === currentBasemapId) return;
+
+  // Remove current basemap layer + source
+  if (map.getLayer('basemap-layer')) map.removeLayer('basemap-layer');
+  if (map.getSource('basemap-source')) map.removeSource('basemap-source');
+
+  // Add new basemap
+  map.addSource('basemap-source', buildBasemapSource(basemap));
+
+  // Find the first non-basemap layer to insert beneath it
+  const layers = map.getStyle().layers || [];
+  const firstOverlayId = layers.find((l) => l.id !== 'basemap-layer')?.id;
+
+  map.addLayer(
+    {
+      id: 'basemap-layer',
+      type: 'raster',
+      source: 'basemap-source',
+      minzoom: basemap.minzoom,
+      maxzoom: basemap.maxzoom,
+    },
+    firstOverlayId,
+  );
+
+  currentBasemapId = id;
+
+  // Re-render preview once tiles settle
+  if (state.aoi) {
+    map.once('idle', () => renderLayoutPreview());
+  }
+}
+
+function initBasemapSelector(): void {
+  const options: DropdownOption[] = BASEMAP_CATALOG.map((b) => ({
+    value: b.id,
+    label: `${b.category} > ${b.name}`,
+  }));
+
+  basemapSelector = new SearchableDropdown({
+    container: document.getElementById('basemap-selector-container')!,
+    placeholder: 'Search basemaps...',
+    onSelect: (opt) => switchBasemap(opt.value),
+  });
+
+  basemapSelector.setOptions(options);
+  basemapSelector.setValue(DEFAULT_BASEMAP_ID);
+}
+
 // ─── Admin Boundary Selectors ─────────────────────────────────────────
 
 function initAdminSelectors(): void {
@@ -2788,12 +3034,14 @@ function syncCountryClickToDropdown(iso3: string): void {
 initMap()
   .then(() => {
     initAdminSelectors();
+    initBasemapSelector();
     initElementControls();
     initWheelResize();
     initPreviewWheelZoom();
     initLegendEditor();
     initDataImport();
     initDrawingTools();
+    initLogoImport();
     handleURLParams();
     console.log('[MapLayout Pro] Designer initialized');
   })

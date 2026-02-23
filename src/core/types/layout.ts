@@ -53,6 +53,17 @@ export interface DrawingAnnotation {
   fillOpacity: number;
 }
 
+export interface ImageAnnotation {
+  id: string;
+  name: string;           // original filename
+  dataUrl: string;        // base64 data URL (PNG/JPG/WebP)
+  position: ElementPosition;
+  widthMM: number;        // display width in mm
+  heightMM: number;       // display height in mm
+  opacity: number;        // 0–1
+  aspectRatio: number;    // original width/height for proportional resize
+}
+
 export interface LayoutState {
   /** The base template */
   template: LayoutTemplate;
@@ -82,6 +93,8 @@ export interface LayoutState {
   customLegendEntries?: LegendEntry[];
   /** Drawing shape annotations */
   drawings?: DrawingAnnotation[];
+  /** Logo / image annotations */
+  logoImages?: ImageAnnotation[];
   /** Geographic bbox of the main map frame at capture time */
   mainMapBBox?: import('./geo').BBox;
   /** Coordinate grid settings */

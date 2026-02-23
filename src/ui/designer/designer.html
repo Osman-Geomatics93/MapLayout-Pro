@@ -34,6 +34,12 @@
         </svg>
         Export
       </button>
+      <button id="btn-about" class="toolbar-btn" title="About MapLayout Pro">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="8" cy="8" r="6.5"/>
+          <path d="M8 7v4M8 5v.01"/>
+        </svg>
+      </button>
     </div>
   </header>
 
@@ -66,6 +72,10 @@
       <!-- Layers Section -->
       <section class="panel-section" id="section-layers">
         <h3 class="section-title">Layers</h3>
+        <div class="basemap-selector-group">
+          <label class="field-label">Basemap</label>
+          <div id="basemap-selector-container"></div>
+        </div>
         <div class="layer-list" id="layer-list">
           <label class="layer-item">
             <input type="checkbox" checked data-layer="basemap"> Basemap
@@ -162,6 +172,16 @@
           <button class="tool-btn" id="btn-legend-clear">Clear Custom</button>
         </div>
         <div id="legend-entry-list" class="legend-entry-list"></div>
+      </section>
+
+      <!-- Logo / Image Section -->
+      <section class="panel-section" id="section-logo">
+        <h3 class="section-title">Logo / Image</h3>
+        <div class="element-hint">Add a logo or image overlay to the layout</div>
+        <button class="tool-btn" id="btn-add-logo">+ Add Image</button>
+        <input type="file" id="logo-file-input"
+               accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" hidden>
+        <div id="logo-image-list"></div>
       </section>
 
       <!-- Custom Text Section -->
@@ -294,6 +314,53 @@
     </div>
   </div>
 
+  <!-- About modal -->
+  <div class="modal-overlay hidden" id="about-modal">
+    <div class="modal about-modal">
+      <div class="about-header">
+        <svg class="about-logo" width="36" height="36" viewBox="0 0 24 24" fill="none">
+          <rect x="2" y="3" width="20" height="18" rx="2" stroke="#2563eb" stroke-width="1.5" fill="none"/>
+          <rect x="4" y="5" width="12" height="10" rx="1" stroke="#2563eb" stroke-width="1" fill="#dbeafe"/>
+          <rect x="17" y="5" width="4" height="4" rx="0.5" stroke="#2563eb" stroke-width="0.8" fill="#eff6ff"/>
+          <polygon points="19,11 18,14 20,14" fill="#2563eb"/>
+        </svg>
+        <div>
+          <h2 class="modal-title" style="margin-bottom:2px;">MapLayout Pro</h2>
+          <span style="font-size:12px;color:#64748b;">v1.0.0</span>
+        </div>
+      </div>
+      <p class="about-desc">Professional cartographic map layouts from your browser — no desktop GIS required.</p>
+      <div class="about-author">
+        <span class="about-label">Developed by</span>
+        <strong>Osman O. A. Ibrahim</strong>
+      </div>
+      <div class="about-socials">
+        <a href="https://osman-geomatics93.online/" target="_blank" rel="noopener" class="about-link">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="8" cy="8" r="6.5"/>
+            <path d="M1.5 8h13M8 1.5c-2 2.5-2 9.5 0 13M8 1.5c2 2.5 2 9.5 0 13"/>
+          </svg>
+          Portfolio
+        </a>
+        <a href="https://github.com/Osman-Geomatics93" target="_blank" rel="noopener" class="about-link">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M8 .2A8 8 0 0 0 5.47 15.79c.4.07.55-.17.55-.38l-.01-1.49c-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.42 7.42 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48l-.01 2.2c0 .21.15.46.55.38A8 8 0 0 0 8 .2z"/>
+          </svg>
+          GitHub
+        </a>
+        <a href="https://www.linkedin.com/in/osman-o-a-ibrahim-a02a9a197" target="_blank" rel="noopener" class="about-link">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M0 1.146C0 .513.526 0 1.175 0h13.65C15.474 0 16 .513 16 1.146v13.708c0 .633-.526 1.146-1.175 1.146H1.175C.526 16 0 15.487 0 14.854V1.146zm4.943 12.248V6.169H2.542v7.225h2.401zm-1.2-8.212c.837 0 1.358-.554 1.358-1.248-.015-.709-.52-1.248-1.342-1.248-.822 0-1.359.54-1.359 1.248 0 .694.521 1.248 1.327 1.248h.016zm4.908 8.212V9.359c0-.216.016-.432.08-.586.173-.431.568-.878 1.232-.878.869 0 1.216.662 1.216 1.634v3.865h2.401V9.25c0-2.22-1.184-3.252-2.764-3.252-1.274 0-1.845.712-2.165 1.206V6.169H6.29c.032.68 0 7.225 0 7.225h2.36z"/>
+          </svg>
+          LinkedIn
+        </a>
+      </div>
+      <div class="modal-footer">
+        <button id="about-close" class="toolbar-btn btn-accent">Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Text edit popup (appears when clicking custom text on preview) -->
   <div class="text-edit-popup hidden" id="text-edit-popup">
     <input type="text" id="te-input" class="field-input" placeholder="Enter text...">
@@ -321,6 +388,20 @@
       <input type="range" id="de-fill-opacity" min="0" max="1" step="0.1" value="0">
     </div>
     <button id="de-delete" class="te-delete-btn" title="Delete shape">&times;</button>
+  </div>
+
+  <!-- Logo edit popup (appears when clicking a logo image on preview) -->
+  <div class="logo-edit-popup hidden" id="logo-edit-popup">
+    <div class="de-row">
+      <label>Width</label>
+      <input type="number" id="le-width" min="5" max="150" step="1" value="30">
+      <label>mm</label>
+    </div>
+    <div class="de-row">
+      <label>Opacity</label>
+      <input type="range" id="le-opacity" min="0" max="1" step="0.05" value="1">
+    </div>
+    <button id="le-delete" class="te-delete-btn" title="Remove image">&times;</button>
   </div>
 
   <script type="module" src="designer.ts"></script>

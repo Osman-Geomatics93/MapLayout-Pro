@@ -5,7 +5,7 @@
  * The SVG viewBox is set to page dimensions in mm, so 1 SVG unit = 1 mm.
  */
 
-import type { LayoutState, ElementOverrides, LegendEntry, DrawingAnnotation, GridSettings } from '../types/layout';
+import type { LayoutState, ElementOverrides, LegendEntry, DrawingAnnotation, ImageAnnotation, GridSettings } from '../types/layout';
 import type { UserDataLayer } from '../types/userdata';
 import type { CRSInfo, ScaleBarInfo, BBox } from '../types/geo';
 import { formatCRSBlock } from '../geo/projections';
@@ -260,6 +260,13 @@ export function buildLayoutSVG(state: LayoutState, config: LayoutConfig): SVGSVG
   if (state.drawings) {
     for (const d of state.drawings) {
       svg.appendChild(buildDrawingShape(d));
+    }
+  }
+
+  // 15. Logo / image annotations
+  if (state.logoImages) {
+    for (const img of state.logoImages) {
+      svg.appendChild(buildImageAnnotation(img));
     }
   }
 
@@ -1027,6 +1034,25 @@ function buildDrawingShape(d: DrawingAnnotation): SVGElement {
       break;
     }
   }
+
+  return g;
+}
+
+/** Build a logo / image annotation */
+function buildImageAnnotation(img: ImageAnnotation): SVGElement {
+  const g = svgEl('g', {
+    'data-logo-image': img.id,
+    transform: `translate(${img.position.x},${img.position.y})`,
+  });
+
+  const imageEl = svgEl('image', {
+    width: img.widthMM,
+    height: img.heightMM,
+    opacity: img.opacity,
+    preserveAspectRatio: 'xMidYMid meet',
+  });
+  imageEl.setAttributeNS('http://www.w3.org/1999/xlink', 'href', img.dataUrl);
+  g.appendChild(imageEl);
 
   return g;
 }

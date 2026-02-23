@@ -202,8 +202,44 @@ body {
 /* Footer */
 .popup-footer {
   text-align: center;
-  padding-top: 4px;
+  padding-top: 8px;
   border-top: 1px solid #f1f5f9;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.footer-author {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.footer-author strong {
+  color: #334155;
+  font-weight: 600;
+}
+
+.footer-links {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.footer-links a {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  color: #94a3b8;
+  transition: all 0.15s;
+}
+
+.footer-links a:hover {
+  color: #2563eb;
+  background: #eff6ff;
 }
 
 .version {
