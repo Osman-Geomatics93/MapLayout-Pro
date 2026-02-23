@@ -3410,17 +3410,24 @@ function saveProject(): void {
     boundaryColors: state.boundaryColors,
     customLegendEntries: state.customLegendEntries,
     activeLayers: state.activeLayers,
+    renderedMaps: state.renderedMaps,
+    mainMapBBox: state.mainMapBBox,
+    scaleBar: state.scaleBar,
+    insetLabels: state.insetLabels,
+    mapView: state.mapView,
     aoi: state.aoi ? {
       type: state.aoi.type,
       name: state.aoi.name,
+      geometry: state.aoi.geometry,
       bbox: state.aoi.bbox,
       centroid: state.aoi.centroid,
       adminLevel: state.aoi.adminLevel,
       parentCountryISO3: state.aoi.parentCountryISO3,
       parentStateName: state.aoi.parentStateName,
+      properties: state.aoi.properties,
     } : null,
   };
-  const json = JSON.stringify(project, null, 2);
+  const json = JSON.stringify(project);
   const blob = new Blob([json], { type: 'application/json' });
   const filename = `${state.fields.title || 'layout'}_${state.fields.date}`.replace(/[^a-zA-Z0-9_-]/g, '_');
   downloadBlob(blob, `${filename}.maplayout`);
@@ -3451,14 +3458,59 @@ function loadProject(file: File): void {
       if (project.customLegendEntries) state.customLegendEntries = project.customLegendEntries;
       if (project.activeLayers) state.activeLayers = project.activeLayers;
 
+      // Restore rendered maps (the captured map images)
+      if (project.renderedMaps) state.renderedMaps = project.renderedMaps;
+      if (project.mainMapBBox) state.mainMapBBox = project.mainMapBBox;
+      if (project.scaleBar) state.scaleBar = project.scaleBar;
+      if (project.insetLabels) state.insetLabels = project.insetLabels;
+      if (project.mapView) state.mapView = project.mapView;
+
+      // Restore AOI (the selected area geometry + metadata)
+      if (project.aoi) {
+        state.aoi = {
+          type: project.aoi.type,
+          name: project.aoi.name,
+          geometry: project.aoi.geometry,
+          bbox: project.aoi.bbox,
+          centroid: project.aoi.centroid,
+          adminLevel: project.aoi.adminLevel,
+          parentCountryISO3: project.aoi.parentCountryISO3,
+          parentStateName: project.aoi.parentStateName,
+          properties: project.aoi.properties,
+        };
+
+        // Show AOI on map
+        (map.getSource('aoi') as GeoJSONSource).setData({
+          type: 'FeatureCollection',
+          features: [{ type: 'Feature', geometry: state.aoi.geometry, properties: {} }],
+        });
+
+        // Fly map to AOI
+        map.fitBounds(
+          [[state.aoi.bbox.west, state.aoi.bbox.south], [state.aoi.bbox.east, state.aoi.bbox.north]],
+          { padding: 60, duration: 1000 }
+        );
+
+        // Detect CRS
+        state.crs = detectUTMZone(state.aoi.centroid);
+        updateAOIStatus(state.aoi);
+      }
+
       syncUIFromState();
       renderLegendEntryList();
 
-      if (state.aoi) {
+      // Rebuild the SVG layout with saved map images
+      if (state.aoi && state.renderedMaps.main) {
         rebuildSVGOnly();
+        updateStatus(`Project loaded: ${file.name}`);
+      } else if (state.aoi) {
+        // No saved map images — re-capture from map
+        updateStatus(`Project loaded. Recapturing maps...`);
+        map.once('idle', () => renderLayoutPreview());
+      } else {
+        updateStatus(`Project loaded: ${file.name} (no AOI selected)`);
       }
 
-      updateStatus(`Project loaded: ${file.name}`);
       pushHistory();
     } catch (err) {
       console.error('Failed to load project:', err);
