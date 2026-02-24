@@ -125,13 +125,64 @@ function syncUIFromState(): void {
     (document.getElementById('el-sb-visible') as HTMLInputElement).checked = state.elementOverrides.scaleBar.visible;
     (document.getElementById('el-lg-visible') as HTMLInputElement).checked = state.elementOverrides.legend.visible;
   }
+  // Sync grid visibility + settings
   if (state.grid) {
     (document.getElementById('el-grid-visible') as HTMLInputElement).checked = state.grid.visible;
+    const gridPanel = document.getElementById('grid-settings');
+    if (gridPanel) gridPanel.classList.toggle('hidden', !state.grid.visible);
+    (document.getElementById('grid-color') as HTMLInputElement).value = state.grid.color || '#333333';
+    (document.getElementById('grid-opacity') as HTMLInputElement).value = String(state.grid.opacity ?? 0.4);
+    (document.getElementById('grid-line-width') as HTMLInputElement).value = String(state.grid.lineWidth ?? 0.08);
+    (document.getElementById('grid-label-size') as HTMLInputElement).value = String(state.grid.labelSize ?? 1.6);
+    (document.getElementById('grid-label-color') as HTMLInputElement).value = state.grid.labelColor || '#333333';
+    (document.getElementById('grid-label-placement') as HTMLSelectElement).value = state.grid.labelPlacement || 'inside';
+  }
+  // Sync page size / orientation dropdowns
+  syncPageDropdowns();
+  // Sync boundary colors
+  if (state.boundaryColors) {
+    (document.getElementById('bc-aoi-fill') as HTMLInputElement).value = state.boundaryColors.aoiFill || '#2563eb';
+    (document.getElementById('bc-aoi-fill-opacity') as HTMLInputElement).value = String(state.boundaryColors.aoiFillOpacity ?? 0.15);
+    (document.getElementById('bc-aoi-stroke') as HTMLInputElement).value = state.boundaryColors.aoiStroke || '#2563eb';
+    (document.getElementById('bc-aoi-stroke-width') as HTMLInputElement).value = String(state.boundaryColors.aoiStrokeWidth ?? 2);
+    (document.getElementById('bc-country-stroke') as HTMLInputElement).value = state.boundaryColors.countryStroke || '#888888';
+    (document.getElementById('bc-country-stroke-width') as HTMLInputElement).value = String(state.boundaryColors.countryStrokeWidth ?? 0.8);
   }
   // Re-render sidebar lists
   renderCustomTextList();
   renderDrawingList();
   renderLogoList();
+  renderLegendEntryList();
+}
+
+/** Reverse-lookup page size name + orientation from current pageConfig dimensions */
+function syncPageDropdowns(): void {
+  const sizes: Record<string, { w: number; h: number }> = {
+    A4: { w: 210, h: 297 },
+    A3: { w: 297, h: 420 },
+    A2: { w: 420, h: 594 },
+    A1: { w: 594, h: 841 },
+    Letter: { w: 215.9, h: 279.4 },
+    Tabloid: { w: 279.4, h: 431.8 },
+    B4: { w: 250, h: 353 },
+  };
+  let foundSize = 'A4';
+  let foundOrientation: 'landscape' | 'portrait' = 'landscape';
+  for (const [name, dim] of Object.entries(sizes)) {
+    if (pageConfig.pageWidthMM === dim.h && pageConfig.pageHeightMM === dim.w) {
+      foundSize = name; foundOrientation = 'landscape'; break;
+    }
+    if (pageConfig.pageWidthMM === dim.w && pageConfig.pageHeightMM === dim.h) {
+      foundSize = name; foundOrientation = 'portrait'; break;
+    }
+  }
+  (document.getElementById('page-size') as HTMLSelectElement).value = foundSize;
+  (document.getElementById('page-orientation') as HTMLSelectElement).value = foundOrientation;
+  // Update preset active state
+  const presetKey = `${foundSize}-${foundOrientation}`;
+  document.querySelectorAll('#page-presets .preset-btn').forEach(btn => {
+    btn.classList.toggle('active', (btn as HTMLElement).dataset.preset === presetKey);
+  });
 }
 
 // ─── Selected Element Tracking ─────────────────────────────────────────
@@ -3383,6 +3434,10 @@ function toggleDarkMode(): void {
 // ─── Save / Load Project ─────────────────────────────────────────────
 
 function initSaveLoad(): void {
+  // Undo / Redo button click handlers
+  document.getElementById('btn-undo')!.addEventListener('click', undo);
+  document.getElementById('btn-redo')!.addEventListener('click', redo);
+
   document.getElementById('btn-save-project')!.addEventListener('click', saveProject);
   const loadBtn = document.getElementById('btn-load-project')!;
   const fileInput = document.getElementById('project-file-input') as HTMLInputElement;
@@ -3777,18 +3832,6 @@ function initShortcutsModal(): void {
   modal.addEventListener('click', (e) => {
     if (e.target === modal) modal.classList.add('hidden');
   });
-}
-
-// ─── Push history after mutations ─────────────────────────────────────
-
-/** Wrap rebuildSVGOnly to also push history on meaningful changes */
-const originalRebuildSVGOnly = rebuildSVGOnly;
-
-/** Debounced history push — called after user interactions settle */
-let historyPushTimeout: ReturnType<typeof setTimeout> | null = null;
-function debouncedHistoryPush(): void {
-  if (historyPushTimeout) clearTimeout(historyPushTimeout);
-  historyPushTimeout = setTimeout(() => pushHistory(), 800);
 }
 
 // ─── Initialize ──────────────────────────────────────────────────────
