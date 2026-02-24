@@ -24,7 +24,6 @@
     "type": "module"
   },
   "permissions": [
-    "storage",
     "activeTab"
   ],
   "host_permissions": [

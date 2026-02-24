@@ -1,9 +1,32 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import { resolve } from 'path';
+
+/**
+ * Strip remotely-hosted code references from jspdf.
+ * jspdf's "pdfobjectnewwindow" output mode hardcodes a CDN <script> tag
+ * for PDFObject. We never use that mode (only `output('blob')`), but
+ * Chrome Web Store's MV3 static analysis flags the URL string.
+ * This plugin neutralizes it at build time.
+ */
+function stripRemoteCodeFromJsPDF(): Plugin {
+  return {
+    name: 'strip-jspdf-remote-code',
+    transform(code, id) {
+      if (!id.includes('jspdf')) return;
+      // Replace the CDN URL so no remote script reference appears in the bundle
+      const stripped = code.replace(
+        'https://cdnjs.cloudflare.com/ajax/libs/pdfobject/2.1.1/pdfobject.min.js',
+        ''
+      );
+      if (stripped !== code) return stripped;
+    },
+  };
+}
 
 const isFirefox = process.env.BROWSER === 'firefox';
 
 export default defineConfig({
+  plugins: [stripRemoteCodeFromJsPDF()],
   resolve: {
     alias: {
       '@core': resolve(__dirname, 'src/core'),
