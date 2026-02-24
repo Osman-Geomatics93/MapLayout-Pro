@@ -50,11 +50,21 @@
         </svg>
       </button>
       <input type="file" id="project-file-input" accept=".maplayout,.json" hidden>
-      <button id="btn-export" class="toolbar-btn btn-accent" title="Export layout">
-        <svg width="16" height="16" viewBox="0 0 16 16">
-          <path d="M8 1v9M4 6l4 4 4-4M2 12v2h12v-2" stroke="currentColor" stroke-width="1.5" fill="none"/>
+      <div class="quick-export-group">
+        <button id="btn-export" class="toolbar-btn btn-accent" title="Export layout">
+          <svg width="16" height="16" viewBox="0 0 16 16">
+            <path d="M8 1v9M4 6l4 4 4-4M2 12v2h12v-2" stroke="currentColor" stroke-width="1.5" fill="none"/>
+          </svg>
+          Export
+        </button>
+        <button id="btn-quick-web" class="toolbar-btn" title="Quick export: 150 DPI PNG (Web)">Web</button>
+        <button id="btn-quick-print" class="toolbar-btn" title="Quick export: 300 DPI PDF (Print)">Print</button>
+      </div>
+      <button id="btn-version-history" class="toolbar-btn" title="Version History">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="8" cy="8" r="6"/>
+          <path d="M8 4v4l3 2"/>
         </svg>
-        Export
       </button>
       <button id="btn-dark-mode" class="toolbar-btn" title="Toggle Dark Mode">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -131,6 +141,17 @@
           <label class="layer-item">
             <input type="checkbox" data-layer="settlements"> Settlements
           </label>
+          <label class="layer-item">
+            <input type="checkbox" id="el-hillshade"> Hillshade / Terrain
+          </label>
+        </div>
+        <div class="custom-basemap-row" style="margin-top:8px">
+          <label class="field-label">Custom Basemap URL</label>
+          <div style="display:flex;gap:4px">
+            <input type="text" id="custom-basemap-url" class="field-input" placeholder="https://tiles/{z}/{x}/{y}.png" style="flex:1">
+            <button class="tool-btn" id="btn-apply-custom-basemap">Apply</button>
+          </div>
+          <div class="element-hint">URL must contain {x}, {y}, {z} placeholders</div>
         </div>
       </section>
 
@@ -148,6 +169,44 @@
         </div>
         <input type="file" id="data-file-input" multiple accept=".geojson,.json,.kml,.kmz,.gpx,.zip" hidden>
         <div id="user-layer-list"></div>
+      </section>
+
+      <!-- Thematic / Choropleth Section -->
+      <section class="panel-section" id="section-choropleth">
+        <h3 class="section-title">Thematic Map</h3>
+        <div class="element-hint">Join CSV data to boundary features for choropleth mapping</div>
+        <button class="tool-btn" id="btn-import-csv" style="width:100%;justify-content:center">Import CSV...</button>
+        <input type="file" id="csv-file-input" accept=".csv" hidden>
+        <div id="choropleth-controls" class="hidden" style="margin-top:8px">
+          <div class="field-group">
+            <label class="field-label">Join Column (CSV)</label>
+            <select id="choro-join-col" class="field-input"></select>
+          </div>
+          <div class="field-group">
+            <label class="field-label">Value Column (CSV)</label>
+            <select id="choro-value-col" class="field-input"></select>
+          </div>
+          <div class="field-group">
+            <label class="field-label">Classification</label>
+            <div style="display:flex;gap:6px">
+              <select id="choro-method" class="field-input" style="flex:1">
+                <option value="equal-interval">Equal Interval</option>
+                <option value="quantile">Quantile</option>
+              </select>
+              <input type="number" id="choro-classes" class="field-input" value="5" min="3" max="9" style="width:50px" title="Number of classes">
+            </div>
+          </div>
+          <div class="boundary-color-row">
+            <label>Colors</label>
+            <input type="color" id="choro-color-start" value="#fee5d9" title="Low value color">
+            <span style="font-size:10px;color:var(--text-muted)">to</span>
+            <input type="color" id="choro-color-end" value="#a50f15" title="High value color">
+          </div>
+          <div style="display:flex;gap:4px;margin-top:6px">
+            <button class="tool-btn" id="btn-apply-choropleth" style="flex:1;justify-content:center">Apply</button>
+            <button class="tool-btn" id="btn-clear-choropleth">Clear</button>
+          </div>
+        </div>
       </section>
 
       <!-- Layout Fields Section -->
@@ -195,6 +254,33 @@
               <option value="inside" selected>Inside</option>
               <option value="outside">Outside</option>
             </select>
+          </div>
+        </div>
+        <!-- North Arrow Style Selector -->
+        <div class="na-style-section">
+          <label class="field-label">North Arrow Style</label>
+          <div class="na-style-grid" id="na-style-grid">
+            <button class="na-style-btn active" data-na-style="simple" title="Simple">
+              <svg viewBox="0 0 24 32" width="20" height="26"><polygon points="12,4 17,24 12,18" fill="#1a1a1a"/><polygon points="12,4 7,24 12,18" fill="#fff" stroke="#1a1a1a" stroke-width="0.8"/></svg>
+            </button>
+            <button class="na-style-btn" data-na-style="compass-rose" title="Compass Rose">
+              <svg viewBox="0 0 24 24" width="20" height="20"><circle cx="12" cy="12" r="9" fill="none" stroke="#1a1a1a" stroke-width="0.8"/><polygon points="12,3 13,11 11,11" fill="#1a1a1a"/><polygon points="12,21 13,13 11,13" fill="#999"/></svg>
+            </button>
+            <button class="na-style-btn" data-na-style="ornate" title="Ornate">
+              <svg viewBox="0 0 24 24" width="20" height="20"><circle cx="12" cy="12" r="10" fill="none" stroke="#1a1a1a" stroke-width="0.6"/><circle cx="12" cy="12" r="8.5" fill="none" stroke="#1a1a1a" stroke-width="0.3"/><polygon points="12,3 14,12 12,9" fill="#1a1a1a"/><polygon points="12,3 10,12 12,9" fill="#fff" stroke="#1a1a1a" stroke-width="0.5"/></svg>
+            </button>
+            <button class="na-style-btn" data-na-style="minimal" title="Minimal">
+              <svg viewBox="0 0 24 32" width="20" height="26"><line x1="12" y1="8" x2="12" y2="28" stroke="#1a1a1a" stroke-width="1"/><polygon points="12,6 10,12 14,12" fill="#1a1a1a"/></svg>
+            </button>
+            <button class="na-style-btn" data-na-style="nato" title="NATO">
+              <svg viewBox="0 0 24 32" width="20" height="26"><polygon points="12,5 20,27 4,27" fill="#1a1a1a"/><line x1="6" y1="20" x2="18" y2="20" stroke="#fff" stroke-width="1.5"/></svg>
+            </button>
+            <button class="na-style-btn" data-na-style="modern" title="Modern">
+              <svg viewBox="0 0 24 32" width="20" height="26"><polygon points="12,4 17,16 7,16" fill="#1a1a1a"/><circle cx="12" cy="20" r="3" fill="none" stroke="#1a1a1a" stroke-width="0.8"/></svg>
+            </button>
+            <button class="na-style-btn" data-na-style="vintage" title="Vintage">
+              <svg viewBox="0 0 24 32" width="20" height="26"><polygon points="12,6 18,24 12,19" fill="#3d2b1f"/><polygon points="12,6 6,24 12,19" fill="#f5e6d3" stroke="#3d2b1f" stroke-width="0.6"/><circle cx="12" cy="25" r="2" fill="#f5e6d3" stroke="#3d2b1f" stroke-width="0.5"/></svg>
+            </button>
           </div>
         </div>
         <div class="element-hint">Drag elements on the preview to reposition</div>
@@ -257,6 +343,7 @@
       <!-- Template Section -->
       <section class="panel-section" id="section-template">
         <h3 class="section-title">Page &amp; Template</h3>
+        <button class="tool-btn" id="btn-choose-template" style="width:100%;justify-content:center;margin-bottom:8px">Choose Template...</button>
         <div class="page-options">
           <select id="page-size" class="field-input field-half">
             <option value="A4">A4</option>
@@ -280,6 +367,20 @@
           <button class="preset-btn" data-preset="Letter-landscape">Ltr L</button>
           <button class="preset-btn" data-preset="Tabloid-landscape">Tab L</button>
         </div>
+        <div class="field-group" style="margin-top:8px">
+          <label class="field-label">Map Frame Border</label>
+          <select id="frame-border-style" class="field-input">
+            <option value="simple">Simple</option>
+            <option value="double">Double Line</option>
+            <option value="shadow">Drop Shadow</option>
+            <option value="neatline-ticks">Neatline + Ticks</option>
+            <option value="rounded">Rounded</option>
+            <option value="none">None</option>
+          </select>
+        </div>
+        <label class="layer-item" style="margin-top:4px">
+          <input type="checkbox" id="el-crop-marks"> Print Crop &amp; Bleed Marks
+        </label>
       </section>
 
       <!-- Boundary Colors Section -->
@@ -302,6 +403,214 @@
         </div>
       </section>
 
+      <!-- Watermark Section -->
+      <section class="panel-section" id="section-watermark">
+        <h3 class="section-title">Watermark</h3>
+        <label class="layer-item"><input type="checkbox" id="wm-enabled"> Enable Watermark</label>
+        <div id="wm-settings" class="hidden" style="margin-top:6px">
+          <div class="field-group">
+            <label class="field-label">Text</label>
+            <input type="text" id="wm-text" class="field-input" value="DRAFT" placeholder="Watermark text...">
+          </div>
+          <div class="boundary-color-row">
+            <label>Size</label>
+            <input type="number" id="wm-font-size" min="10" max="80" step="2" value="30">
+          </div>
+          <div class="boundary-color-row">
+            <label>Color</label>
+            <input type="color" id="wm-color" value="#cccccc">
+            <input type="range" id="wm-opacity" min="0.05" max="0.5" step="0.05" value="0.15" title="Opacity">
+          </div>
+          <div class="boundary-color-row">
+            <label>Angle</label>
+            <input type="range" id="wm-angle" min="-90" max="90" step="5" value="-30" title="Rotation angle">
+            <span id="wm-angle-val" style="font-size:10px;color:var(--text-muted);width:28px;text-align:right">-30°</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Map Callouts Section -->
+      <section class="panel-section" id="section-callouts">
+        <h3 class="section-title">Map Callouts</h3>
+        <div class="element-hint">Add labels with leader lines pointing to map locations</div>
+        <button class="tool-btn" id="btn-add-callout">+ Add Callout</button>
+        <div id="callout-list"></div>
+      </section>
+
+      <!-- Auto Labels Section -->
+      <section class="panel-section" id="section-auto-labels">
+        <h3 class="section-title">Auto Labels</h3>
+        <label class="layer-item"><input type="checkbox" id="al-enabled"> Enable Auto Labels</label>
+        <div id="al-settings" class="hidden" style="margin-top:6px">
+          <div class="boundary-color-row">
+            <label>Size</label>
+            <input type="number" id="al-font-size" min="8" max="24" step="1" value="12">
+          </div>
+          <div class="boundary-color-row">
+            <label>Color</label>
+            <input type="color" id="al-color" value="#1a1a1a">
+          </div>
+          <div class="boundary-color-row">
+            <label>Halo</label>
+            <input type="color" id="al-halo-color" value="#ffffff">
+            <input type="number" id="al-halo-width" min="0" max="4" step="0.5" value="1.5" title="Halo width">
+          </div>
+          <div class="field-group" style="margin-top:4px">
+            <label class="field-label">Label Language</label>
+            <select id="map-label-lang" class="field-input">
+              <option value="en">English</option>
+              <option value="ar">Arabic</option>
+              <option value="fr">French</option>
+              <option value="es">Spanish</option>
+              <option value="local">Local Name</option>
+            </select>
+            <div class="element-hint">Natural Earth data provides English names only</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Symbol Library Section -->
+      <section class="panel-section" id="section-symbols">
+        <h3 class="section-title">Map Symbols</h3>
+        <div class="element-hint">Click a symbol, then click the map to place it</div>
+        <div class="symbol-grid" id="symbol-grid"><!-- Populated by JS --></div>
+        <div id="symbol-controls" class="hidden" style="margin-top:6px">
+          <div class="boundary-color-row">
+            <label>Size</label>
+            <input type="number" id="sym-size" min="2" max="12" step="0.5" value="4">
+          </div>
+          <div class="boundary-color-row">
+            <label>Color</label>
+            <input type="color" id="sym-color" value="#e53e3e">
+          </div>
+        </div>
+        <div id="symbol-list"></div>
+      </section>
+
+      <!-- Scale Text Section -->
+      <section class="panel-section" id="section-scale-text">
+        <h3 class="section-title">Additional Elements</h3>
+        <div class="element-toggles">
+          <label class="layer-item"><input type="checkbox" id="el-scale-text"> Scale Text</label>
+          <label class="layer-item"><input type="checkbox" id="el-locator-map"> Locator Map</label>
+          <label class="layer-item"><input type="checkbox" id="el-qr-code"> QR Code</label>
+        </div>
+        <div id="locator-settings" class="hidden" style="margin-top:4px">
+          <div class="boundary-color-row">
+            <label>Locator Size</label>
+            <input type="range" id="locator-size" min="20" max="80" step="2" value="40">
+          </div>
+        </div>
+        <div id="qr-settings" class="hidden" style="margin-top:4px">
+          <div class="boundary-color-row">
+            <label>QR Size</label>
+            <input type="range" id="qr-size" min="10" max="40" step="2" value="20">
+          </div>
+          <div class="field-group">
+            <label class="field-label">URL (auto-generated from AOI)</label>
+            <input type="text" id="qr-url" class="field-input" placeholder="Auto from AOI bbox...">
+          </div>
+        </div>
+      </section>
+
+      <!-- Disclaimer Box Section -->
+      <section class="panel-section" id="section-disclaimer">
+        <h3 class="section-title">Disclaimer / Sources</h3>
+        <label class="layer-item"><input type="checkbox" id="el-disclaimer"> Show Disclaimer Box</label>
+        <div id="disclaimer-settings" class="hidden" style="margin-top:6px">
+          <div class="field-group">
+            <label class="field-label">Text</label>
+            <textarea id="disclaimer-text" class="field-input" rows="3" style="resize:vertical">Data Sources: OpenStreetMap, Natural Earth
+Disclaimer: For reference only</textarea>
+          </div>
+          <div class="boundary-color-row">
+            <label>Font</label>
+            <input type="number" id="disclaimer-font-size" min="1" max="4" step="0.2" value="1.8">
+          </div>
+          <div class="boundary-color-row">
+            <label>Width</label>
+            <input type="number" id="disclaimer-width" min="20" max="120" step="5" value="60">
+          </div>
+          <div class="boundary-color-row">
+            <label>BG</label>
+            <input type="color" id="disclaimer-bg" value="#ffffff">
+            <label>Border</label>
+            <input type="color" id="disclaimer-border" value="#cccccc">
+          </div>
+        </div>
+      </section>
+
+      <!-- Color Palettes Section -->
+      <section class="panel-section" id="section-palettes">
+        <h3 class="section-title">Color Palettes</h3>
+        <div class="element-hint">Colorblind-safe presets for choropleth mapping</div>
+        <div class="palette-grid" id="palette-grid"><!-- Populated by JS --></div>
+      </section>
+
+      <!-- Data Table Section -->
+      <section class="panel-section" id="section-data-table">
+        <h3 class="section-title">Data Table</h3>
+        <div class="element-hint">Insert a statistics table into the layout</div>
+        <label class="layer-item"><input type="checkbox" id="el-data-table"> Show Data Table</label>
+        <button class="tool-btn" id="btn-import-table-csv" style="width:100%;justify-content:center;margin-top:4px">Import CSV...</button>
+        <input type="file" id="table-csv-input" accept=".csv" hidden>
+        <div id="data-table-settings" class="hidden" style="margin-top:6px">
+          <div class="boundary-color-row">
+            <label>Max Rows</label>
+            <input type="number" id="dt-max-rows" min="3" max="50" step="1" value="10">
+          </div>
+          <div class="boundary-color-row">
+            <label>Width</label>
+            <input type="number" id="dt-width" min="30" max="150" step="5" value="80">
+          </div>
+          <div class="boundary-color-row">
+            <label>Font</label>
+            <input type="number" id="dt-font-size" min="1" max="4" step="0.2" value="1.8">
+          </div>
+          <div class="boundary-color-row">
+            <label>Header</label>
+            <input type="color" id="dt-header-bg" value="#2563eb">
+            <input type="color" id="dt-header-color" value="#ffffff">
+          </div>
+        </div>
+      </section>
+
+      <!-- Atlas / Map Series Section -->
+      <section class="panel-section" id="section-atlas">
+        <h3 class="section-title">Atlas / Map Series</h3>
+        <div class="element-hint">Split AOI into a grid of map pages</div>
+        <label class="layer-item"><input type="checkbox" id="el-atlas"> Enable Atlas Mode</label>
+        <div id="atlas-settings" class="hidden" style="margin-top:6px">
+          <div class="boundary-color-row">
+            <label>Cols</label>
+            <input type="number" id="atlas-cols" min="1" max="10" step="1" value="2">
+            <label>Rows</label>
+            <input type="number" id="atlas-rows" min="1" max="10" step="1" value="2">
+          </div>
+          <div class="boundary-color-row">
+            <label>Overlap %</label>
+            <input type="range" id="atlas-overlap" min="5" max="20" step="1" value="10">
+            <span id="atlas-overlap-val" style="font-size:10px;width:28px;text-align:right">10%</span>
+          </div>
+          <button class="tool-btn" id="btn-atlas-generate" style="width:100%;justify-content:center">Generate Grid</button>
+          <div id="atlas-nav" class="hidden" style="margin-top:6px;display:flex;align-items:center;gap:8px">
+            <button class="mini-btn" id="btn-atlas-prev">&lt;</button>
+            <span id="atlas-page-label" style="font-size:11px">Page 1 of 1</span>
+            <button class="mini-btn" id="btn-atlas-next">&gt;</button>
+          </div>
+          <button class="tool-btn hidden" id="btn-atlas-export" style="width:100%;justify-content:center;margin-top:4px">Export All Pages</button>
+        </div>
+      </section>
+
+      <!-- Custom Fonts Section -->
+      <section class="panel-section" id="section-custom-fonts">
+        <h3 class="section-title">Custom Fonts</h3>
+        <div class="element-hint">Import .ttf, .woff, or .woff2 font files</div>
+        <button class="tool-btn" id="btn-import-font">+ Import Font</button>
+        <input type="file" id="font-file-input" accept=".ttf,.woff,.woff2" hidden>
+        <div id="custom-font-list"></div>
+      </section>
+
     </aside>
 
     <!-- Center: split between interactive map and layout preview -->
@@ -315,9 +624,43 @@
         <div class="coord-display" id="coord-display">
           <span id="coord-text">--</span>
         </div>
+        <div class="measurement-tools" id="measurement-tools">
+          <button class="mini-btn" id="btn-measure-distance" title="Measure Distance">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 14l12-12M2 14l3-1M2 14l1-3"/></svg>
+            Dist
+          </button>
+          <button class="mini-btn" id="btn-measure-area" title="Measure Area">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="3,13 8,2 14,10 10,14"/></svg>
+            Area
+          </button>
+          <button class="mini-btn" id="btn-measure-clear" title="Clear Measurements">Clear</button>
+        </div>
       </div>
 
       <!-- Layout preview canvas -->
+      <!-- Alignment Toolbar (floating, shown when element selected) -->
+      <div id="alignment-toolbar" class="alignment-toolbar hidden">
+        <button class="align-btn" data-align="left" title="Align Left">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="2" y1="2" x2="2" y2="14"/><rect x="4" y="4" width="8" height="3" rx="0.5"/><rect x="4" y="9" width="5" height="3" rx="0.5"/></svg>
+        </button>
+        <button class="align-btn" data-align="center-h" title="Center Horizontal">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="8" y1="2" x2="8" y2="14"/><rect x="4" y="4" width="8" height="3" rx="0.5"/><rect x="5" y="9" width="6" height="3" rx="0.5"/></svg>
+        </button>
+        <button class="align-btn" data-align="right" title="Align Right">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="14" y1="2" x2="14" y2="14"/><rect x="4" y="4" width="8" height="3" rx="0.5"/><rect x="7" y="9" width="5" height="3" rx="0.5"/></svg>
+        </button>
+        <span class="align-divider"></span>
+        <button class="align-btn" data-align="top" title="Align Top">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="2" y1="2" x2="14" y2="2"/><rect x="4" y="4" width="3" height="8" rx="0.5"/><rect x="9" y="4" width="3" height="5" rx="0.5"/></svg>
+        </button>
+        <button class="align-btn" data-align="center-v" title="Center Vertical">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="2" y1="8" x2="14" y2="8"/><rect x="4" y="4" width="3" height="8" rx="0.5"/><rect x="9" y="5" width="3" height="6" rx="0.5"/></svg>
+        </button>
+        <button class="align-btn" data-align="bottom" title="Align Bottom">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="2" y1="14" x2="14" y2="14"/><rect x="4" y="4" width="3" height="8" rx="0.5"/><rect x="9" y="7" width="3" height="5" rx="0.5"/></svg>
+        </button>
+      </div>
+
       <div class="layout-preview-container" id="layout-preview-container">
         <div class="preview-toolbar">
           <span class="preview-label">Layout Preview</span>
@@ -333,6 +676,8 @@
           <span class="preview-hint">Scroll to zoom &middot; Ctrl+Scroll on maps to adjust</span>
         </div>
         <div class="preview-scroll" id="preview-scroll">
+          <div class="ruler-h" id="ruler-h" title="Click to add vertical guide"></div>
+          <div class="ruler-v" id="ruler-v" title="Click to add horizontal guide"></div>
           <div id="layout-svg-host" class="layout-svg-host">
             <!-- SVG layout will be rendered here -->
           </div>
@@ -510,6 +855,7 @@
             <div class="sc-row"><span class="sc-desc">Delete Selected</span><div class="sc-keys"><kbd>Delete</kbd></div></div>
             <div class="sc-row"><span class="sc-desc">Nudge Element</span><div class="sc-keys"><kbd>&larr;</kbd> <kbd>&uarr;</kbd> <kbd>&darr;</kbd> <kbd>&rarr;</kbd></div></div>
             <div class="sc-row"><span class="sc-desc">Resize Selected</span><div class="sc-keys"><kbd>+</kbd> <kbd>&minus;</kbd></div></div>
+            <div class="sc-row"><span class="sc-desc">Duplicate Element</span><div class="sc-keys"><kbd>Ctrl</kbd><span class="sc-plus">+</span><kbd>D</kbd></div></div>
             <div class="sc-row"><span class="sc-desc">Lock / Unlock</span><div class="sc-keys"><kbd>L</kbd></div></div>
             <div class="sc-row"><span class="sc-desc">Deselect</span><div class="sc-keys"><kbd>Esc</kbd></div></div>
             <div class="sc-row"><span class="sc-desc">Add Text</span><div class="sc-keys"><kbd class="sc-action">Double-click</kbd></div></div>
@@ -610,6 +956,46 @@
         </svg>
       </button>
       <button id="le-delete" class="te-delete-btn" title="Remove image">&times;</button>
+    </div>
+  </div>
+
+  <!-- Template Gallery Modal -->
+  <div class="modal-overlay hidden" id="template-modal">
+    <div class="modal" style="width:520px">
+      <h2 class="modal-title">Choose a Template</h2>
+      <div class="template-grid" id="template-grid">
+        <!-- Template cards rendered by JS -->
+      </div>
+      <div class="modal-footer" style="margin-top:16px">
+        <button id="template-cancel" class="toolbar-btn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent Projects Modal -->
+  <div class="modal-overlay hidden" id="recent-modal">
+    <div class="modal" style="width:460px">
+      <h2 class="modal-title">Recent Projects</h2>
+      <div class="recent-project-list" id="recent-project-list">
+        <div class="element-hint" style="text-align:center;padding:20px">No recent projects</div>
+      </div>
+      <div class="modal-footer" style="margin-top:12px">
+        <button id="recent-load-file" class="toolbar-btn">Load from File...</button>
+        <button id="recent-cancel" class="toolbar-btn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Version History Modal -->
+  <div class="modal-overlay hidden" id="version-history-modal">
+    <div class="modal" style="width:480px;max-height:80vh">
+      <h2 class="modal-title">Version History</h2>
+      <div id="version-history-list" class="version-history-list" style="max-height:50vh;overflow-y:auto">
+        <div class="element-hint" style="text-align:center;padding:20px">No versions saved yet</div>
+      </div>
+      <div class="modal-footer" style="margin-top:12px">
+        <button id="version-history-close" class="toolbar-btn">Close</button>
+      </div>
     </div>
   </div>
 

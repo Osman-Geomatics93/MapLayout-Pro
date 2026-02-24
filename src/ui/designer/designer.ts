@@ -12,16 +12,21 @@ import { computeScaleBar } from '@core/geo/scale';
 import { searchPlace, type GeocodingResult } from '@core/geo/geocoding';
 import { buildLayoutSVG, computeDefaultOverrides, type LayoutConfig } from '@core/layout/LayoutEngine';
 import { exportToPNG, downloadBlob } from '@core/export/PNGExporter';
-import { exportToPDF, exportToSVG } from '@core/export/PDFExporter';
+import { exportToPDF, exportToSVG, type GeoPDFMetadata } from '@core/export/PDFExporter';
 import { loadBoundaries, findCountryByName, loadAdminBoundaries, getCountryISO3 } from '@core/data/BoundaryLoader';
 import { SearchableDropdown, type DropdownOption } from '@ui/components/SearchableDropdown';
 import { BASEMAP_CATALOG, getBasemapById, DEFAULT_BASEMAP_ID, type BasemapDefinition } from '@core/data/basemaps';
 import { parseUserFile } from '@core/data/UserDataLoader';
 import { getLayerColor } from '@core/data/defaultLayerStyles';
 import type { UserDataLayer } from '@core/types/userdata';
-import type { LayoutState, ElementOverrides, CustomTextAnnotation, LegendEntry, DrawingAnnotation, DrawingShapeType, ImageAnnotation, BoundaryColorSettings } from '@core/types/layout';
+import type { LayoutState, ElementOverrides, CustomTextAnnotation, LegendEntry, DrawingAnnotation, DrawingShapeType, ImageAnnotation, BoundaryColorSettings, NorthArrowStyle, MapFrameBorderStyle, WatermarkSettings, CalloutAnnotation, ChoroplethConfig, ScaleTextSettings, DisclaimerBoxSettings, QRCodeSettings, LocatorMapSettings, AutoLabelSettings, SymbolAnnotation, DataTableSettings, CustomFont, AtlasConfig, HatchPattern } from '@core/types/layout';
 import type { AOISelection, BBox, LngLat } from '@core/types/geo';
+import { SYMBOL_CATALOG, getSymbolById } from '@core/data/symbolLibrary';
+import { COLOR_PALETTES, getPaletteColors } from '@core/data/colorPalettes';
+import { saveVersion, getVersions, deleteVersion, labelVersion, type VersionSnapshot } from '@core/data/VersionHistory';
 import { initLocale, setLocale, t, type Locale, type TranslationStrings } from '@core/i18n/locales';
+import { LAYOUT_PRESETS, type LayoutPreset } from '@core/templates/presets';
+import { saveRecent, getRecent, deleteRecent, generateThumbnail, type RecentProject } from '@core/data/RecentProjects';
 
 // ─── Undo / Redo History ─────────────────────────────────────────────
 
@@ -33,6 +38,23 @@ interface HistorySnapshot {
   fields: string;
   grid: string;
   boundaryColors: string;
+  cropMarks: string;
+  watermark: string;
+  frameBorderStyle: string;
+  guides: string;
+  callouts: string;
+  choropleth: string;
+  hillshadeEnabled: string;
+  scaleText: string;
+  disclaimerBox: string;
+  qrCode: string;
+  locatorMap: string;
+  autoLabels: string;
+  symbols: string;
+  mapLabelLang: string;
+  atlas: string;
+  dataTable: string;
+  customFonts: string;
 }
 
 const history: { stack: HistorySnapshot[]; index: number } = {
@@ -50,16 +72,39 @@ function takeSnapshot(): HistorySnapshot {
     fields: JSON.stringify(state.fields),
     grid: JSON.stringify(state.grid),
     boundaryColors: JSON.stringify(state.boundaryColors),
+    cropMarks: JSON.stringify(state.cropMarks ?? false),
+    watermark: JSON.stringify(state.watermark),
+    frameBorderStyle: JSON.stringify(state.frameBorderStyle ?? 'simple'),
+    guides: JSON.stringify(state.guides),
+    callouts: JSON.stringify(state.callouts),
+    choropleth: JSON.stringify(state.choropleth),
+    hillshadeEnabled: JSON.stringify(state.hillshadeEnabled ?? false),
+    scaleText: JSON.stringify(state.scaleText),
+    disclaimerBox: JSON.stringify(state.disclaimerBox),
+    qrCode: JSON.stringify(state.qrCode),
+    locatorMap: JSON.stringify(state.locatorMap),
+    autoLabels: JSON.stringify(state.autoLabels),
+    symbols: JSON.stringify(state.symbols),
+    mapLabelLang: JSON.stringify(state.mapLabelLang ?? 'en'),
+    atlas: JSON.stringify(state.atlas),
+    dataTable: JSON.stringify(state.dataTable),
+    customFonts: JSON.stringify(state.customFonts?.map(f => ({ name: f.name, format: f.format, dataUrl: f.dataUrl.slice(0, 50) + '___FONT_REF___' + f.name }))),
   };
 }
 
 /** Store logos by id so undo/redo doesn't duplicate huge data URLs */
 const logoDataUrlCache = new Map<string, string>();
+/** Store custom font data URLs by name */
+const fontDataUrlCache = new Map<string, string>();
 
 function pushHistory(): void {
   // Cache logo data URLs
   for (const logo of state.logoImages || []) {
     logoDataUrlCache.set(logo.id, logo.dataUrl);
+  }
+  // Cache custom font data URLs
+  for (const font of state.customFonts || []) {
+    fontDataUrlCache.set(font.name, font.dataUrl);
   }
   const snap = takeSnapshot();
   // Discard any redo states
@@ -74,7 +119,6 @@ function restoreSnapshot(snap: HistorySnapshot): void {
   state.customTexts = JSON.parse(snap.customTexts);
   state.drawings = JSON.parse(snap.drawings);
   const parsedLogos: ImageAnnotation[] = JSON.parse(snap.logoImages);
-  // Restore full data URLs from cache
   for (const logo of parsedLogos) {
     if (logo.dataUrl.includes('___LOGO_REF___')) {
       const cached = logoDataUrlCache.get(logo.id);
@@ -86,6 +130,33 @@ function restoreSnapshot(snap: HistorySnapshot): void {
   state.fields = JSON.parse(snap.fields);
   state.grid = JSON.parse(snap.grid);
   state.boundaryColors = snap.boundaryColors ? JSON.parse(snap.boundaryColors) : undefined;
+  state.cropMarks = snap.cropMarks ? JSON.parse(snap.cropMarks) : false;
+  state.watermark = snap.watermark ? JSON.parse(snap.watermark) : undefined;
+  state.frameBorderStyle = snap.frameBorderStyle ? JSON.parse(snap.frameBorderStyle) : 'simple';
+  state.guides = snap.guides ? JSON.parse(snap.guides) : undefined;
+  state.callouts = snap.callouts ? JSON.parse(snap.callouts) : undefined;
+  state.choropleth = snap.choropleth ? JSON.parse(snap.choropleth) : undefined;
+  state.hillshadeEnabled = snap.hillshadeEnabled ? JSON.parse(snap.hillshadeEnabled) : false;
+  state.scaleText = snap.scaleText ? JSON.parse(snap.scaleText) : undefined;
+  state.disclaimerBox = snap.disclaimerBox ? JSON.parse(snap.disclaimerBox) : undefined;
+  state.qrCode = snap.qrCode ? JSON.parse(snap.qrCode) : undefined;
+  state.locatorMap = snap.locatorMap ? JSON.parse(snap.locatorMap) : undefined;
+  state.autoLabels = snap.autoLabels ? JSON.parse(snap.autoLabels) : undefined;
+  state.symbols = snap.symbols ? JSON.parse(snap.symbols) : undefined;
+  state.mapLabelLang = snap.mapLabelLang ? JSON.parse(snap.mapLabelLang) : 'en';
+  state.atlas = snap.atlas ? JSON.parse(snap.atlas) : undefined;
+  state.dataTable = snap.dataTable ? JSON.parse(snap.dataTable) : undefined;
+  // Restore custom fonts with cached data URLs
+  const parsedFonts: CustomFont[] | undefined = snap.customFonts ? JSON.parse(snap.customFonts) : undefined;
+  if (parsedFonts) {
+    for (const font of parsedFonts) {
+      if (font.dataUrl.includes('___FONT_REF___')) {
+        const cached = fontDataUrlCache.get(font.name);
+        if (cached) font.dataUrl = cached;
+      }
+    }
+    state.customFonts = parsedFonts;
+  }
 }
 
 function undo(): void {
@@ -148,11 +219,106 @@ function syncUIFromState(): void {
     (document.getElementById('bc-country-stroke') as HTMLInputElement).value = state.boundaryColors.countryStroke || '#888888';
     (document.getElementById('bc-country-stroke-width') as HTMLInputElement).value = String(state.boundaryColors.countryStrokeWidth ?? 0.8);
   }
+  // Sync crop marks
+  const cropCb = document.getElementById('el-crop-marks') as HTMLInputElement;
+  if (cropCb) cropCb.checked = state.cropMarks === true;
+  // Sync frame border style
+  const borderSel = document.getElementById('frame-border-style') as HTMLSelectElement;
+  if (borderSel) borderSel.value = state.frameBorderStyle || 'simple';
+  // Sync north arrow style
+  document.querySelectorAll('#na-style-grid .na-style-btn').forEach(btn => {
+    const s = (btn as HTMLElement).dataset.naStyle;
+    btn.classList.toggle('active', s === (state.elementOverrides?.northArrow?.style || 'simple'));
+  });
+  // Sync watermark
+  const wmEnabled = document.getElementById('wm-enabled') as HTMLInputElement;
+  if (wmEnabled && state.watermark) {
+    wmEnabled.checked = state.watermark.enabled;
+    const wmPanel = document.getElementById('wm-settings');
+    if (wmPanel) wmPanel.classList.toggle('hidden', !state.watermark.enabled);
+    (document.getElementById('wm-text') as HTMLInputElement).value = state.watermark.text || 'DRAFT';
+    (document.getElementById('wm-font-size') as HTMLInputElement).value = String(state.watermark.fontSize || 30);
+    (document.getElementById('wm-color') as HTMLInputElement).value = state.watermark.color || '#cccccc';
+    (document.getElementById('wm-opacity') as HTMLInputElement).value = String(state.watermark.opacity ?? 0.15);
+    (document.getElementById('wm-angle') as HTMLInputElement).value = String(state.watermark.angle ?? -30);
+  }
+  // Sync hillshade
+  const hillCb = document.getElementById('el-hillshade') as HTMLInputElement;
+  if (hillCb) hillCb.checked = state.hillshadeEnabled === true;
+
+  // Sync new feature toggles
+  const scaleTextCb = document.getElementById('el-scale-text') as HTMLInputElement;
+  if (scaleTextCb) scaleTextCb.checked = state.scaleText?.visible === true;
+
+  const disclaimerCb = document.getElementById('el-disclaimer') as HTMLInputElement;
+  if (disclaimerCb) {
+    disclaimerCb.checked = state.disclaimerBox?.visible === true;
+    document.getElementById('disclaimer-settings')?.classList.toggle('hidden', !state.disclaimerBox?.visible);
+    if (state.disclaimerBox) {
+      (document.getElementById('disclaimer-text') as HTMLTextAreaElement).value = state.disclaimerBox.text;
+      (document.getElementById('disclaimer-font-size') as HTMLInputElement).value = String(state.disclaimerBox.fontSize);
+      (document.getElementById('disclaimer-width') as HTMLInputElement).value = String(state.disclaimerBox.width);
+      (document.getElementById('disclaimer-bg') as HTMLInputElement).value = state.disclaimerBox.backgroundColor;
+      (document.getElementById('disclaimer-border') as HTMLInputElement).value = state.disclaimerBox.borderColor;
+    }
+  }
+
+  const qrCb = document.getElementById('el-qr-code') as HTMLInputElement;
+  if (qrCb) {
+    qrCb.checked = state.qrCode?.visible === true;
+    document.getElementById('qr-settings')?.classList.toggle('hidden', !state.qrCode?.visible);
+    if (state.qrCode) {
+      (document.getElementById('qr-url') as HTMLInputElement).value = state.qrCode.url;
+      (document.getElementById('qr-size') as HTMLInputElement).value = String(state.qrCode.size);
+    }
+  }
+
+  const locatorCb = document.getElementById('el-locator-map') as HTMLInputElement;
+  if (locatorCb) {
+    locatorCb.checked = state.locatorMap?.visible === true;
+    document.getElementById('locator-settings')?.classList.toggle('hidden', !state.locatorMap?.visible);
+    if (state.locatorMap) {
+      (document.getElementById('locator-size') as HTMLInputElement).value = String(state.locatorMap.size);
+    }
+  }
+
+  const alCb = document.getElementById('al-enabled') as HTMLInputElement;
+  if (alCb) {
+    alCb.checked = state.autoLabels?.enabled === true;
+    document.getElementById('al-settings')?.classList.toggle('hidden', !state.autoLabels?.enabled);
+    if (state.autoLabels) {
+      (document.getElementById('al-font-size') as HTMLInputElement).value = String(state.autoLabels.fontSize);
+      (document.getElementById('al-color') as HTMLInputElement).value = state.autoLabels.color;
+      (document.getElementById('al-halo-color') as HTMLInputElement).value = state.autoLabels.haloColor;
+      (document.getElementById('al-halo-width') as HTMLInputElement).value = String(state.autoLabels.haloWidth);
+    }
+  }
+
+  if (state.mapLabelLang) {
+    const langSel = document.getElementById('map-label-lang') as HTMLSelectElement;
+    if (langSel) langSel.value = state.mapLabelLang;
+  }
+
+  const atlasCb = document.getElementById('el-atlas') as HTMLInputElement;
+  if (atlasCb) {
+    atlasCb.checked = state.atlas?.enabled === true;
+    document.getElementById('atlas-settings')?.classList.toggle('hidden', !state.atlas?.enabled);
+  }
+
+  const dtCb = document.getElementById('el-data-table') as HTMLInputElement;
+  if (dtCb) {
+    dtCb.checked = state.dataTable?.visible === true;
+    document.getElementById('data-table-settings')?.classList.toggle('hidden', !state.dataTable?.visible);
+  }
+
   // Re-render sidebar lists
   renderCustomTextList();
   renderDrawingList();
   renderLogoList();
   renderLegendEntryList();
+  renderCalloutList();
+  renderSymbolList();
+  renderCustomFontList();
 }
 
 /** Reverse-lookup page size name + orientation from current pageConfig dimensions */
@@ -196,6 +362,8 @@ function selectElement(id: string, type: typeof selectedElementType): void {
   selectedElementType = type;
   const svg = document.querySelector('#layout-svg-host svg') as SVGSVGElement;
   if (!svg) return;
+  // Show alignment toolbar
+  setTimeout(() => showAlignmentToolbar(), 0);
   const attr = type === 'element' ? 'data-element'
     : type === 'custom-text' ? 'data-custom-text'
     : type === 'drawing' ? 'data-drawing'
@@ -209,6 +377,7 @@ function clearSelection(): void {
   if (svg) svg.querySelectorAll('.selected').forEach(el => el.classList.remove('selected'));
   selectedElementId = null;
   selectedElementType = null;
+  hideAlignmentToolbar();
 }
 
 // ─── State ───────────────────────────────────────────────────────────
@@ -251,6 +420,19 @@ const state: LayoutState = {
     countryStroke: '#888888',
     countryStrokeWidth: 0.8,
   },
+  cropMarks: false,
+  watermark: {
+    enabled: false,
+    text: 'DRAFT',
+    fontSize: 30,
+    color: '#cccccc',
+    opacity: 0.15,
+    angle: -30,
+  },
+  frameBorderStyle: 'simple',
+  guides: { h: [], v: [] },
+  hillshadeEnabled: false,
+  callouts: [],
 };
 
 let countriesGeoJSON: GeoJSON.FeatureCollection | null = null;
@@ -401,6 +583,9 @@ async function initMap(): Promise<void> {
 // ─── AOI Selection ───────────────────────────────────────────────────
 
 function handleCountryClick(e: MapMouseEvent): void {
+  // Don't select a country when other map interaction modes are active
+  if (calloutPickMode || measureMode || symbolPickMode) return;
+
   const features = map.queryRenderedFeatures(e.point, {
     layers: ['countries-fill'],
   });
@@ -440,10 +625,11 @@ function selectAOI(aoi: AOISelection): void {
     features: [{ type: 'Feature', geometry: aoi.geometry, properties: {} }],
   });
 
-  // Fly to AOI
+  // Fly to AOI (clamp to Mercator-safe range)
+  const safeBounds = clampBBox(aoi.bbox);
   const padding = 60;
   map.fitBounds(
-    [[aoi.bbox.west, aoi.bbox.south], [aoi.bbox.east, aoi.bbox.north]],
+    [[safeBounds.west, safeBounds.south], [safeBounds.east, safeBounds.north]],
     { padding, duration: 1500 }
   );
 
@@ -573,7 +759,7 @@ async function captureMapImage(): Promise<{ dataUrl: string; captureZoom: number
       const latSpan = bounds.getNorth() - bounds.getSouth();
       map.setCenter([
         map.getCenter().lng + pan.x * lngSpan,
-        map.getCenter().lat + pan.y * latSpan,
+        Math.max(-85.05, Math.min(85.05, map.getCenter().lat + pan.y * latSpan)),
       ]);
     }
     await waitForMapIdle();
@@ -741,9 +927,10 @@ async function captureInsetMap(level: 'country' | 'state'): Promise<string | nul
     });
   }
 
-  // Move map to inset view (without animation)
+  // Move map to inset view (without animation, clamp to safe range)
+  const ib = clampBBox(targetBBox);
   map.fitBounds(
-    [[targetBBox.west, targetBBox.south], [targetBBox.east, targetBBox.north]],
+    [[ib.west, ib.south], [ib.east, ib.north]],
     { duration: 0, padding: 10 }
   );
 
@@ -761,7 +948,7 @@ async function captureInsetMap(level: 'country' | 'state'): Promise<string | nul
     const latSpan = bounds.getNorth() - bounds.getSouth();
     map.setCenter([
       map.getCenter().lng + pan.x * lngSpan,
-      map.getCenter().lat + pan.y * latSpan,
+      Math.max(-85.05, Math.min(85.05, map.getCenter().lat + pan.y * latSpan)),
     ]);
   }
 
@@ -794,16 +981,16 @@ async function captureInsetMap(level: 'country' | 'state'): Promise<string | nul
   return dataUrl;
 }
 
-/** Expand a BBox by a fraction of its span in each direction */
+/** Expand a BBox by a fraction of its span in each direction (clamped to valid range) */
 function padBBox(b: BBox, fraction: number): BBox {
   const latSpan = b.north - b.south;
   const lngSpan = b.east - b.west;
-  return {
+  return clampBBox({
     west: b.west - lngSpan * fraction,
     south: b.south - latSpan * fraction,
     east: b.east + lngSpan * fraction,
     north: b.north + latSpan * fraction,
-  };
+  });
 }
 
 /** Wait for the map to finish rendering all sources and layers */
@@ -878,14 +1065,14 @@ function renderSearchResults(results: GeocodingResult[]): void {
       toolbarResults.classList.add('hidden');
       toolbarSearch.value = r.shortName;
 
-      // Fly to result
-      const bbox: BBox = {
+      // Fly to result (clamp to valid range)
+      const bbox: BBox = clampBBox({
         south: r.bbox[0],
         north: r.bbox[1],
         west: r.bbox[2],
         east: r.bbox[3],
-      };
-      const centroid: LngLat = { lng: r.lon, lat: r.lat };
+      });
+      const centroid: LngLat = { lng: Math.max(-180, Math.min(180, r.lon)), lat: Math.max(-85.05, Math.min(85.05, r.lat)) };
 
       // Try to find matching country in loaded boundaries
       const countryFeature = countriesGeoJSON
@@ -1247,6 +1434,8 @@ function updatePreviewZoom(): void {
   // Sync slider
   const slider = document.getElementById('zoom-slider') as HTMLInputElement;
   if (slider) slider.value = String(pct);
+  // Re-render ruler guides at new scale (delayed to let layout reflow)
+  requestAnimationFrame(() => renderRulerGuides());
 }
 
 function fitPreviewToView(): void {
@@ -1452,18 +1641,32 @@ document.getElementById('export-confirm')!.addEventListener('click', async () =>
   try {
     const filename = `${state.fields.title || 'map'}_${state.fields.date}`.replace(/[^a-zA-Z0-9_-]/g, '_');
 
+    const pdfOrientation: 'landscape' | 'portrait' = pageConfig.pageWidthMM > pageConfig.pageHeightMM ? 'landscape' : 'portrait';
+
+    // Build GeoPDF metadata if AOI exists
+    let geoMetadata: GeoPDFMetadata | undefined;
+    if (state.mainMapBBox && state.crs && state.scaleBar) {
+      geoMetadata = {
+        bbox: { west: state.mainMapBBox.west, south: state.mainMapBBox.south, east: state.mainMapBBox.east, north: state.mainMapBBox.north },
+        crs: `EPSG:${state.crs.epsg}`,
+        epsg: state.crs.epsg,
+        scale: state.scaleBar.representativeFraction,
+        projection: state.crs.name,
+      };
+    }
+
     // Build manifest JSON if needed
     let manifestJSON: string | undefined;
     if (embedManifest && state.aoi) {
       manifestJSON = JSON.stringify({
         manifestVersion: '1.0',
-        generatedBy: 'MapLayout Pro v0.1.0',
+        generatedBy: 'MapLayout Pro v1.4.0',
         generatedAt: new Date().toISOString(),
         aoi: { name: state.aoi.name, type: state.aoi.type, bbox: state.aoi.bbox },
         templateId: 'scientific-study-area-v1',
         mapState: state.mapView,
         activeLayers: state.activeLayers,
-        exportSettings: { format, dpi, pageSize: 'A4', orientation: 'landscape' },
+        exportSettings: { format, dpi, pageSize: 'A4', orientation: pdfOrientation },
       });
     }
 
@@ -1473,11 +1676,12 @@ document.getElementById('export-confirm')!.addEventListener('click', async () =>
       const pdfBlob = await exportToPDF(layoutSVG, {
         pageWidthMM: pageConfig.pageWidthMM,
         pageHeightMM: pageConfig.pageHeightMM,
-        orientation: 'landscape',
+        orientation: pdfOrientation,
         dpi,
         title: state.fields.title,
         author: state.fields.author,
         manifestJSON,
+        geoMetadata,
         onProgress: (p, m) => onProgress(p * 0.4, m),
       });
       downloadBlob(pdfBlob, `${filename}.pdf`);
@@ -1507,11 +1711,12 @@ document.getElementById('export-confirm')!.addEventListener('click', async () =>
       const blob = await exportToPDF(layoutSVG, {
         pageWidthMM: pageConfig.pageWidthMM,
         pageHeightMM: pageConfig.pageHeightMM,
-        orientation: 'landscape',
+        orientation: pdfOrientation,
         dpi,
         title: state.fields.title,
         author: state.fields.author,
         manifestJSON,
+        geoMetadata,
         onProgress,
       });
       downloadBlob(blob, `${filename}.pdf`);
@@ -1642,7 +1847,22 @@ function computeBBox(geometry: GeoJSON.Geometry): BBox {
   }
 
   walk(geometry);
-  return { west, south, east, north };
+  return {
+    west: Math.max(-180, west),
+    south: Math.max(-85.05, south),
+    east: Math.min(180, east),
+    north: Math.min(85.05, north),
+  };
+}
+
+/** Clamp a BBox to valid MapLibre bounds (Mercator safe) */
+function clampBBox(bbox: BBox): BBox {
+  return {
+    west: Math.max(-180, Math.min(180, bbox.west)),
+    south: Math.max(-85.05, Math.min(85.05, bbox.south)),
+    east: Math.max(-180, Math.min(180, bbox.east)),
+    north: Math.max(-85.05, Math.min(85.05, bbox.north)),
+  };
 }
 
 function computeCentroid(bbox: BBox): LngLat {
@@ -1779,11 +1999,26 @@ function startElementDrag(e: MouseEvent, el: SVGElement, svg: SVGSVGElement): vo
     const customTextId = el.getAttribute('data-custom-text');
 
     if (elementId && state.elementOverrides) {
-      const entry = state.elementOverrides[elementId as keyof ElementOverrides];
-      if ('position' in entry) {
-        entry.position.x = nx;
-        entry.position.y = ny;
+      // Check if it's a standard element override
+      if (elementId in state.elementOverrides) {
+        const entry = state.elementOverrides[elementId as keyof ElementOverrides];
+        if ('position' in entry) {
+          entry.position.x = nx;
+          entry.position.y = ny;
+        }
       }
+    }
+    // Handle new draggable elements that store position in their own state
+    if (elementId === 'scaleText' && state.scaleText) {
+      state.scaleText.position = { x: nx, y: ny };
+    } else if (elementId === 'disclaimerBox' && state.disclaimerBox) {
+      state.disclaimerBox.position = { x: nx, y: ny };
+    } else if (elementId === 'qrCode' && state.qrCode) {
+      state.qrCode.position = { x: nx, y: ny };
+    } else if (elementId === 'locatorMap' && state.locatorMap) {
+      state.locatorMap.position = { x: nx, y: ny };
+    } else if (elementId === 'dataTable' && state.dataTable) {
+      state.dataTable.position = { x: nx, y: ny };
     } else if (customTextId) {
       const ct = state.customTexts?.find(t => t.id === customTextId);
       if (ct) {
@@ -1800,6 +2035,8 @@ function startElementDrag(e: MouseEvent, el: SVGElement, svg: SVGSVGElement): vo
         img.position.y = ny;
       }
     }
+
+    pushHistory();
 
     // Brief delay so the click event from mouseup doesn't trigger dblclick
     setTimeout(() => { isDragging = false; }, 100);
@@ -1846,6 +2083,7 @@ function startDrawingDrag(e: MouseEvent, el: SVGElement, svg: SVGSVGElement): vo
     // Commit the final position with a full rebuild
     rebuildSVGOnly();
     renderDrawingList();
+    pushHistory();
     setTimeout(() => { isDragging = false; }, 100);
   };
 
@@ -2713,6 +2951,27 @@ function renderLegendEntryList(): void {
       rebuildSVGOnly();
     });
 
+    // Hatch pattern dropdown (only for fill type)
+    const patternSelect = document.createElement('select');
+    patternSelect.title = 'Hatch pattern';
+    patternSelect.className = 'legend-pattern-select';
+    for (const p of ['none', 'diagonal', 'crosshatch', 'horizontal', 'vertical', 'dots', 'circles'] as const) {
+      const opt = document.createElement('option');
+      opt.value = p;
+      opt.textContent = p === 'none' ? 'Solid' : p.charAt(0).toUpperCase() + p.slice(1);
+      if (p === (entry.pattern || 'none')) opt.selected = true;
+      patternSelect.appendChild(opt);
+    }
+    patternSelect.style.display = entry.type === 'fill' ? '' : 'none';
+    patternSelect.addEventListener('change', () => {
+      entry.pattern = patternSelect.value as HatchPattern;
+      rebuildSVGOnly();
+    });
+    // Show/hide pattern dropdown when type changes
+    typeSelect.addEventListener('change', () => {
+      patternSelect.style.display = typeSelect.value === 'fill' ? '' : 'none';
+    });
+
     const deleteBtn = document.createElement('button');
     deleteBtn.className = 'legend-entry-delete';
     deleteBtn.innerHTML = '&times;';
@@ -2729,6 +2988,7 @@ function renderLegendEntryList(): void {
     row.appendChild(cb);
     row.appendChild(colorInput);
     row.appendChild(typeSelect);
+    row.appendChild(patternSelect);
     row.appendChild(labelInput);
     row.appendChild(deleteBtn);
     container.appendChild(row);
@@ -3061,15 +3321,15 @@ function handleURLParams(): void {
           properties: countryFeature.properties as Record<string, unknown>,
         });
       } else if (bboxStr) {
-        // Use provided bbox
+        // Use provided bbox (clamp to valid range)
         const parts = bboxStr.split(',').map(Number);
-        const bbox: BBox = { south: parts[0], north: parts[1], west: parts[2], east: parts[3] };
+        const bbox: BBox = clampBBox({ south: parts[0], north: parts[1], west: parts[2], east: parts[3] });
         selectAOI({
           type: 'custom',
           name,
           geometry: bboxToPolygon(bbox),
           bbox,
-          centroid: { lng: lonNum, lat: latNum },
+          centroid: { lng: Math.max(-180, Math.min(180, lonNum)), lat: Math.max(-85.05, Math.min(85.05, latNum)) },
         });
       }
     }, 2000); // Wait for boundaries to load
@@ -3481,10 +3741,52 @@ function getSnapGuides(): { vertical: number[]; horizontal: number[] } {
   const m = pageConfig.marginMM;
   const w = pageConfig.pageWidthMM;
   const h = pageConfig.pageHeightMM;
-  return {
-    vertical: [m, w / 2, w - m, w / 4, 3 * w / 4],
-    horizontal: [m, h / 2, h - m, h / 4, 3 * h / 4],
-  };
+  const vertical = [m, w / 2, w - m, w / 4, 3 * w / 4];
+  const horizontal = [m, h / 2, h - m, h / 4, 3 * h / 4];
+  // Include user-defined ruler guides
+  if (state.guides) {
+    vertical.push(...state.guides.v);
+    horizontal.push(...state.guides.h);
+  }
+  // Include positions from all draggable elements for smart snapping
+  if (state.customTexts) {
+    for (const ct of state.customTexts) {
+      vertical.push(ct.position.x);
+      horizontal.push(ct.position.y);
+    }
+  }
+  if (state.logoImages) {
+    for (const img of state.logoImages) {
+      vertical.push(img.position.x);
+      horizontal.push(img.position.y);
+    }
+  }
+  if (state.elementOverrides) {
+    const ov = state.elementOverrides;
+    vertical.push(ov.northArrow.position.x, ov.titleBlock.position.x, ov.scaleBar.position.x, ov.legend.position.x);
+    horizontal.push(ov.northArrow.position.y, ov.titleBlock.position.y, ov.scaleBar.position.y, ov.legend.position.y);
+  }
+  if (state.scaleText?.visible) {
+    vertical.push(state.scaleText.position.x);
+    horizontal.push(state.scaleText.position.y);
+  }
+  if (state.disclaimerBox?.visible) {
+    vertical.push(state.disclaimerBox.position.x);
+    horizontal.push(state.disclaimerBox.position.y);
+  }
+  if (state.qrCode?.visible) {
+    vertical.push(state.qrCode.position.x);
+    horizontal.push(state.qrCode.position.y);
+  }
+  if (state.locatorMap?.visible) {
+    vertical.push(state.locatorMap.position.x);
+    horizontal.push(state.locatorMap.position.y);
+  }
+  if (state.dataTable?.visible) {
+    vertical.push(state.dataTable.position.x);
+    horizontal.push(state.dataTable.position.y);
+  }
+  return { vertical, horizontal };
 }
 
 let activeSnapGuideH: HTMLElement | null = null;
@@ -3549,9 +3851,9 @@ function initSaveLoad(): void {
   document.getElementById('btn-redo')!.addEventListener('click', redo);
 
   document.getElementById('btn-save-project')!.addEventListener('click', saveProject);
-  const loadBtn = document.getElementById('btn-load-project')!;
+  // Load button click is handled by initRecentProjects() which shows
+  // recent projects modal with a "Load from File" fallback.
   const fileInput = document.getElementById('project-file-input') as HTMLInputElement;
-  loadBtn.addEventListener('click', () => fileInput.click());
   fileInput.addEventListener('change', () => {
     if (fileInput.files?.length) {
       loadProject(fileInput.files[0]);
@@ -3563,7 +3865,7 @@ function initSaveLoad(): void {
 function saveProject(): void {
   readFieldsFromUI();
   const project = {
-    version: '1.2.0',
+    version: '1.4.0',
     savedAt: new Date().toISOString(),
     pageConfig: { ...pageConfig },
     fields: { ...state.fields },
@@ -3580,6 +3882,23 @@ function saveProject(): void {
     scaleBar: state.scaleBar,
     insetLabels: state.insetLabels,
     mapView: state.mapView,
+    cropMarks: state.cropMarks,
+    watermark: state.watermark,
+    frameBorderStyle: state.frameBorderStyle,
+    guides: state.guides,
+    hillshadeEnabled: state.hillshadeEnabled,
+    callouts: state.callouts,
+    choropleth: state.choropleth,
+    scaleText: state.scaleText,
+    disclaimerBox: state.disclaimerBox,
+    qrCode: state.qrCode,
+    locatorMap: state.locatorMap,
+    autoLabels: state.autoLabels,
+    symbols: state.symbols,
+    mapLabelLang: state.mapLabelLang,
+    atlas: state.atlas,
+    dataTable: state.dataTable,
+    customFonts: state.customFonts,
     aoi: state.aoi ? {
       type: state.aoi.type,
       name: state.aoi.name,
@@ -3597,6 +3916,19 @@ function saveProject(): void {
   const filename = `${state.fields.title || 'layout'}_${state.fields.date}`.replace(/[^a-zA-Z0-9_-]/g, '_');
   downloadBlob(blob, `${filename}.maplayout`);
   updateStatus('Project saved!');
+
+  // Also save to recent projects
+  if (layoutSVG) {
+    generateThumbnail(layoutSVG).then(thumb => {
+      saveRecent({
+        id: `recent-${Date.now()}`,
+        name: state.fields.title || 'Untitled',
+        savedAt: new Date().toISOString(),
+        thumbnail: thumb,
+        projectJSON: json,
+      }).catch(() => {});
+    });
+  }
 }
 
 function loadProject(file: File): void {
@@ -3622,6 +3954,33 @@ function loadProject(file: File): void {
       if (project.boundaryColors) state.boundaryColors = project.boundaryColors;
       if (project.customLegendEntries) state.customLegendEntries = project.customLegendEntries;
       if (project.activeLayers) state.activeLayers = project.activeLayers;
+      // Restore new fields with backward-compatible defaults
+      state.cropMarks = project.cropMarks ?? false;
+      if (project.watermark) state.watermark = project.watermark;
+      state.frameBorderStyle = project.frameBorderStyle ?? 'simple';
+      if (project.guides) state.guides = project.guides;
+      state.hillshadeEnabled = project.hillshadeEnabled ?? false;
+      if (project.callouts) state.callouts = project.callouts;
+      if (project.choropleth) state.choropleth = project.choropleth;
+      if (project.scaleText) state.scaleText = project.scaleText;
+      if (project.disclaimerBox) state.disclaimerBox = project.disclaimerBox;
+      if (project.qrCode) state.qrCode = project.qrCode;
+      if (project.locatorMap) state.locatorMap = project.locatorMap;
+      if (project.autoLabels) state.autoLabels = project.autoLabels;
+      if (project.symbols) state.symbols = project.symbols;
+      state.mapLabelLang = project.mapLabelLang ?? 'en';
+      if (project.atlas) state.atlas = project.atlas;
+      if (project.dataTable) state.dataTable = project.dataTable;
+      if (project.customFonts) {
+        state.customFonts = project.customFonts;
+        // Re-register custom fonts
+        for (const cf of state.customFonts!) {
+          try {
+            const face = new FontFace(cf.name, `url(${cf.dataUrl})`);
+            face.load().then(f => (document.fonts as any).add(f)).catch(() => {});
+          } catch { /* ignore */ }
+        }
+      }
 
       // Restore rendered maps (the captured map images)
       if (project.renderedMaps) state.renderedMaps = project.renderedMaps;
@@ -3636,8 +3995,11 @@ function loadProject(file: File): void {
           type: project.aoi.type,
           name: project.aoi.name,
           geometry: project.aoi.geometry,
-          bbox: project.aoi.bbox,
-          centroid: project.aoi.centroid,
+          bbox: clampBBox(project.aoi.bbox),
+          centroid: {
+            lng: Math.max(-180, Math.min(180, project.aoi.centroid.lng)),
+            lat: Math.max(-85.05, Math.min(85.05, project.aoi.centroid.lat)),
+          },
           adminLevel: project.aoi.adminLevel,
           parentCountryISO3: project.aoi.parentCountryISO3,
           parentStateName: project.aoi.parentStateName,
@@ -3650,9 +4012,10 @@ function loadProject(file: File): void {
           features: [{ type: 'Feature', geometry: state.aoi.geometry, properties: {} }],
         });
 
-        // Fly map to AOI
+        // Fly map to AOI (clamp to Mercator-safe range)
+        const lb = clampBBox(state.aoi.bbox);
         map.fitBounds(
-          [[state.aoi.bbox.west, state.aoi.bbox.south], [state.aoi.bbox.east, state.aoi.bbox.north]],
+          [[lb.west, lb.south], [lb.east, lb.north]],
           { padding: 60, duration: 1000 }
         );
 
@@ -3720,6 +4083,13 @@ function initKeyboardShortcuts(): void {
     if ((e.ctrlKey || e.metaKey) && e.key === 's') {
       e.preventDefault();
       saveProject();
+      return;
+    }
+
+    // Ctrl+D → Duplicate selected element
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D')) {
+      e.preventDefault();
+      duplicateSelected();
       return;
     }
 
@@ -3944,6 +4314,1845 @@ function initShortcutsModal(): void {
   });
 }
 
+// ─── Feature 5: Print Crop & Bleed Marks ─────────────────────────────
+
+function initCropMarks(): void {
+  document.getElementById('el-crop-marks')!.addEventListener('change', () => {
+    state.cropMarks = (document.getElementById('el-crop-marks') as HTMLInputElement).checked;
+    pushHistory();
+    rebuildSVGOnly();
+  });
+}
+
+// ─── Feature 4: Watermark / Draft Stamp ──────────────────────────────
+
+function initWatermarkControls(): void {
+  const enabledCb = document.getElementById('wm-enabled') as HTMLInputElement;
+  const settingsPanel = document.getElementById('wm-settings')!;
+
+  enabledCb.addEventListener('change', () => {
+    state.watermark!.enabled = enabledCb.checked;
+    settingsPanel.classList.toggle('hidden', !enabledCb.checked);
+    pushHistory();
+    rebuildSVGOnly();
+  });
+
+  const readWatermark = () => {
+    state.watermark = {
+      enabled: enabledCb.checked,
+      text: (document.getElementById('wm-text') as HTMLInputElement).value,
+      fontSize: parseFloat((document.getElementById('wm-font-size') as HTMLInputElement).value),
+      color: (document.getElementById('wm-color') as HTMLInputElement).value,
+      opacity: parseFloat((document.getElementById('wm-opacity') as HTMLInputElement).value),
+      angle: parseFloat((document.getElementById('wm-angle') as HTMLInputElement).value),
+    };
+    const angleLabel = document.getElementById('wm-angle-val');
+    if (angleLabel) angleLabel.textContent = `${state.watermark.angle}°`;
+    rebuildSVGOnly();
+  };
+
+  for (const id of ['wm-text', 'wm-font-size', 'wm-color', 'wm-opacity', 'wm-angle']) {
+    document.getElementById(id)!.addEventListener('input', readWatermark);
+  }
+}
+
+// ─── Feature 10: Duplicate Element (Ctrl+D) ─────────────────────────
+
+function duplicateSelected(): void {
+  if (!selectedElementId || !selectedElementType) return;
+
+  if (selectedElementType === 'custom-text') {
+    const ct = state.customTexts?.find(t => t.id === selectedElementId);
+    if (ct) {
+      const clone: CustomTextAnnotation = {
+        ...ct,
+        id: `ct-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+        position: { x: ct.position.x + 2, y: ct.position.y + 2 },
+      };
+      state.customTexts!.push(clone);
+      pushHistory();
+      rebuildSVGOnly();
+      renderCustomTextList();
+      selectElement(clone.id, 'custom-text');
+    }
+  } else if (selectedElementType === 'drawing') {
+    const d = state.drawings?.find(d => d.id === selectedElementId);
+    if (d) {
+      const clone: DrawingAnnotation = {
+        ...d,
+        id: `draw-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+        x1: d.x1 + 2, y1: d.y1 + 2,
+        x2: d.x2 + 2, y2: d.y2 + 2,
+      };
+      state.drawings!.push(clone);
+      pushHistory();
+      rebuildSVGOnly();
+      renderDrawingList();
+      selectElement(clone.id, 'drawing');
+    }
+  } else if (selectedElementType === 'logo-image') {
+    const img = state.logoImages?.find(i => i.id === selectedElementId);
+    if (img) {
+      const clone: ImageAnnotation = {
+        ...img,
+        id: `logo-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+        position: { x: img.position.x + 2, y: img.position.y + 2 },
+      };
+      state.logoImages!.push(clone);
+      logoDataUrlCache.set(clone.id, clone.dataUrl);
+      pushHistory();
+      rebuildSVGOnly();
+      renderLogoList();
+      selectElement(clone.id, 'logo-image');
+    }
+  }
+}
+
+// ─── Feature 3: Map Frame Border Styles ──────────────────────────────
+
+function initFrameBorderStyle(): void {
+  document.getElementById('frame-border-style')!.addEventListener('change', () => {
+    state.frameBorderStyle = (document.getElementById('frame-border-style') as HTMLSelectElement).value as MapFrameBorderStyle;
+    pushHistory();
+    rebuildSVGOnly();
+  });
+}
+
+// ─── Feature 2: Multiple North Arrow Styles ──────────────────────────
+
+function initNorthArrowStyles(): void {
+  const grid = document.getElementById('na-style-grid')!;
+  grid.addEventListener('click', (e) => {
+    const btn = (e.target as Element).closest('.na-style-btn') as HTMLElement;
+    if (!btn) return;
+    const style = btn.dataset.naStyle as NorthArrowStyle;
+    if (!style || !state.elementOverrides) return;
+
+    state.elementOverrides.northArrow.style = style;
+    grid.querySelectorAll('.na-style-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    pushHistory();
+    rebuildSVGOnly();
+  });
+}
+
+// ─── Feature 6: Element Alignment Toolbar ────────────────────────────
+
+function initAlignmentToolbar(): void {
+  const toolbar = document.getElementById('alignment-toolbar')!;
+
+  toolbar.addEventListener('click', (e) => {
+    const btn = (e.target as Element).closest('.align-btn') as HTMLElement;
+    if (!btn) return;
+    const dir = btn.dataset.align;
+    if (!dir || !selectedElementId) return;
+    alignSelectedElement(dir);
+  });
+}
+
+function showAlignmentToolbar(): void {
+  const toolbar = document.getElementById('alignment-toolbar')!;
+  if (!selectedElementId) { toolbar.classList.add('hidden'); return; }
+
+  const svg = document.querySelector('#layout-svg-host svg') as SVGSVGElement;
+  if (!svg) return;
+  const attr = selectedElementType === 'element' ? 'data-element'
+    : selectedElementType === 'custom-text' ? 'data-custom-text'
+    : selectedElementType === 'drawing' ? 'data-drawing'
+    : 'data-logo-image';
+  const el = svg.querySelector(`[${attr}="${selectedElementId}"]`);
+  if (!el) return;
+
+  const rect = el.getBoundingClientRect();
+  toolbar.style.left = `${rect.left + rect.width / 2 - 90}px`;
+  toolbar.style.top = `${rect.top - 40}px`;
+  toolbar.classList.remove('hidden');
+}
+
+function hideAlignmentToolbar(): void {
+  document.getElementById('alignment-toolbar')?.classList.add('hidden');
+}
+
+function alignSelectedElement(direction: string): void {
+  if (!selectedElementId || !selectedElementType) return;
+
+  const m = pageConfig.marginMM;
+  const w = pageConfig.pageWidthMM;
+  const h = pageConfig.pageHeightMM;
+
+  const setPos = (pos: { x: number; y: number }) => {
+    switch (direction) {
+      case 'left': pos.x = m; break;
+      case 'center-h': pos.x = w / 2; break;
+      case 'right': pos.x = w - m; break;
+      case 'top': pos.y = m; break;
+      case 'center-v': pos.y = h / 2; break;
+      case 'bottom': pos.y = h - m; break;
+    }
+  };
+
+  if (selectedElementType === 'custom-text') {
+    const ct = state.customTexts?.find(t => t.id === selectedElementId);
+    if (ct) setPos(ct.position);
+  } else if (selectedElementType === 'logo-image') {
+    const img = state.logoImages?.find(i => i.id === selectedElementId);
+    if (img) setPos(img.position);
+  } else if (selectedElementType === 'element' && state.elementOverrides) {
+    const key = selectedElementId as keyof ElementOverrides;
+    const entry = state.elementOverrides[key];
+    if (entry && 'position' in entry) setPos(entry.position);
+  }
+
+  pushHistory();
+  rebuildSVGOnly();
+}
+
+// ─── Feature 7: Draggable Ruler Guides ───────────────────────────────
+
+/** Active guide DOM elements — re-rendered on zoom/scale changes */
+let guideElements: HTMLElement[] = [];
+
+function initRulerGuides(): void {
+  const rulerH = document.getElementById('ruler-h')!;
+  const rulerV = document.getElementById('ruler-v')!;
+
+  rulerH.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    createGuide('h', e);
+  });
+
+  rulerV.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    createGuide('v', e);
+  });
+}
+
+/** Re-render all ruler guide divs from state (call after zoom changes) */
+function renderRulerGuides(): void {
+  const scroll = document.getElementById('preview-scroll')!;
+  const host = document.getElementById('layout-svg-host')!;
+
+  // Remove old guide elements
+  for (const el of guideElements) el.remove();
+  guideElements = [];
+
+  if (!state.guides) return;
+
+  const hostRect = host.getBoundingClientRect();
+  const scrollRect = scroll.getBoundingClientRect();
+
+  for (const mmY of state.guides.h) {
+    const guide = document.createElement('div');
+    guide.className = 'user-guide-h';
+    const pxY = (mmY / pageConfig.pageHeightMM) * hostRect.height;
+    guide.style.top = `${hostRect.top - scrollRect.top + pxY + scroll.scrollTop}px`;
+    guide.dataset.mm = String(mmY);
+    guide.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      dragGuideToDelete(guide, 'h', mmY);
+    });
+    scroll.appendChild(guide);
+    guideElements.push(guide);
+  }
+
+  for (const mmX of state.guides.v) {
+    const guide = document.createElement('div');
+    guide.className = 'user-guide-v';
+    const pxX = (mmX / pageConfig.pageWidthMM) * hostRect.width;
+    guide.style.left = `${hostRect.left - scrollRect.left + pxX + scroll.scrollLeft}px`;
+    guide.dataset.mm = String(mmX);
+    guide.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      dragGuideToDelete(guide, 'v', mmX);
+    });
+    scroll.appendChild(guide);
+    guideElements.push(guide);
+  }
+}
+
+function createGuide(type: 'h' | 'v', startEvent: MouseEvent): void {
+  const host = document.getElementById('layout-svg-host')!;
+  const scroll = document.getElementById('preview-scroll')!;
+  const guide = document.createElement('div');
+  guide.className = type === 'h' ? 'user-guide-h' : 'user-guide-v';
+  scroll.appendChild(guide);
+
+  const onMove = (e: MouseEvent) => {
+    const hostRect = host.getBoundingClientRect();
+    const scrollRect = scroll.getBoundingClientRect();
+    if (type === 'h') {
+      const y = e.clientY - hostRect.top;
+      const mmY = (y / hostRect.height) * pageConfig.pageHeightMM;
+      guide.style.top = `${e.clientY - scrollRect.top + scroll.scrollTop}px`;
+      guide.dataset.mm = String(mmY);
+    } else {
+      const x = e.clientX - hostRect.left;
+      const mmX = (x / hostRect.width) * pageConfig.pageWidthMM;
+      guide.style.left = `${e.clientX - scrollRect.left + scroll.scrollLeft}px`;
+      guide.dataset.mm = String(mmX);
+    }
+  };
+
+  const onUp = () => {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    const mm = parseFloat(guide.dataset.mm || '0');
+    if (mm < 0 || (type === 'h' && mm > pageConfig.pageHeightMM) || (type === 'v' && mm > pageConfig.pageWidthMM)) {
+      guide.remove(); // Dragged back to ruler = delete
+    } else {
+      if (!state.guides) state.guides = { h: [], v: [] };
+      state.guides[type].push(mm);
+      guideElements.push(guide);
+      // Make guide draggable to delete
+      guide.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        dragGuideToDelete(guide, type, mm);
+      });
+    }
+  };
+
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+  onMove(startEvent);
+}
+
+function dragGuideToDelete(guide: HTMLElement, type: 'h' | 'v', mm: number): void {
+  const onMove = (e: MouseEvent) => {
+    const scroll = document.getElementById('preview-scroll')!;
+    const scrollRect = scroll.getBoundingClientRect();
+    if (type === 'h') {
+      guide.style.top = `${e.clientY - scrollRect.top + scroll.scrollTop}px`;
+    } else {
+      guide.style.left = `${e.clientX - scrollRect.left + scroll.scrollLeft}px`;
+    }
+  };
+
+  const onUp = () => {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    guide.remove();
+    guideElements = guideElements.filter(el => el !== guide);
+    if (state.guides) {
+      state.guides[type] = state.guides[type].filter(v => Math.abs(v - mm) > 0.5);
+    }
+  };
+
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+}
+
+// ─── Feature 9: Quick Export Presets ──────────────────────────────────
+
+function initQuickExport(): void {
+  document.getElementById('btn-quick-web')!.addEventListener('click', () => {
+    performQuickExport('png', 150);
+  });
+  document.getElementById('btn-quick-print')!.addEventListener('click', () => {
+    performQuickExport('pdf', 300);
+  });
+}
+
+async function performQuickExport(format: 'png' | 'pdf', dpi: number): Promise<void> {
+  if (!layoutSVG) {
+    alert('Please generate a layout first.');
+    return;
+  }
+  const filename = `${state.fields.title || 'map'}_${state.fields.date}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+  try {
+    updateStatus(`Exporting ${format.toUpperCase()} at ${dpi} DPI...`);
+    if (format === 'png') {
+      const blob = await exportToPNG(layoutSVG, {
+        dpi,
+        pageWidthMM: pageConfig.pageWidthMM,
+        pageHeightMM: pageConfig.pageHeightMM,
+      });
+      downloadBlob(blob, `${filename}.png`);
+    } else {
+      // Build GeoPDF metadata for quick export
+      let qGeo: GeoPDFMetadata | undefined;
+      if (state.mainMapBBox && state.crs && state.scaleBar) {
+        qGeo = {
+          bbox: { west: state.mainMapBBox.west, south: state.mainMapBBox.south, east: state.mainMapBBox.east, north: state.mainMapBBox.north },
+          crs: `EPSG:${state.crs.epsg}`,
+          epsg: state.crs.epsg,
+          scale: state.scaleBar.representativeFraction,
+          projection: state.crs.name,
+        };
+      }
+      const blob = await exportToPDF(layoutSVG, {
+        pageWidthMM: pageConfig.pageWidthMM,
+        pageHeightMM: pageConfig.pageHeightMM,
+        orientation: pageConfig.pageWidthMM > pageConfig.pageHeightMM ? 'landscape' : 'portrait',
+        dpi,
+        title: state.fields.title,
+        author: state.fields.author,
+        geoMetadata: qGeo,
+      });
+      downloadBlob(blob, `${filename}.pdf`);
+    }
+    updateStatus(`Exported ${format.toUpperCase()} successfully!`);
+  } catch (err) {
+    console.error('Quick export failed:', err);
+    updateStatus(`Export failed: ${(err as Error).message}`);
+  }
+}
+
+// ─── Feature 1: Layout Templates ─────────────────────────────────────
+
+function initTemplates(): void {
+  const modal = document.getElementById('template-modal')!;
+  const grid = document.getElementById('template-grid')!;
+
+  // Render template cards
+  for (const preset of LAYOUT_PRESETS) {
+    const card = document.createElement('div');
+    card.className = 'template-card';
+    card.innerHTML = `
+      <div class="template-card-preview" style="background:${preset.previewGradient};font-family:${preset.fontFamily};color:${preset.titleColor}">Aa</div>
+      <div class="template-card-body">
+        <div class="template-card-name">${preset.name}</div>
+        <div class="template-card-desc">${preset.description}</div>
+      </div>
+    `;
+    card.addEventListener('click', () => {
+      applyTemplate(preset);
+      modal.classList.add('hidden');
+    });
+    grid.appendChild(card);
+  }
+
+  document.getElementById('btn-choose-template')!.addEventListener('click', () => {
+    modal.classList.remove('hidden');
+  });
+  document.getElementById('template-cancel')!.addEventListener('click', () => {
+    modal.classList.add('hidden');
+  });
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) modal.classList.add('hidden');
+  });
+}
+
+function applyTemplate(preset: LayoutPreset): void {
+  pushHistory();
+  if (state.elementOverrides) {
+    state.elementOverrides.northArrow.style = preset.northArrowStyle;
+  }
+  state.frameBorderStyle = preset.frameBorderStyle;
+  // Update north arrow style grid UI
+  document.querySelectorAll('#na-style-grid .na-style-btn').forEach(btn => {
+    btn.classList.toggle('active', (btn as HTMLElement).dataset.naStyle === preset.northArrowStyle);
+  });
+  (document.getElementById('frame-border-style') as HTMLSelectElement).value = preset.frameBorderStyle;
+  syncUIFromState();
+  rebuildSVGOnly();
+  updateStatus(`Template "${preset.name}" applied`);
+}
+
+// ─── Feature 8: Recent Projects (IndexedDB) ─────────────────────────
+
+function initRecentProjects(): void {
+  const modal = document.getElementById('recent-modal')!;
+  const loadBtn = document.getElementById('btn-load-project')!;
+  const fileInput = document.getElementById('project-file-input') as HTMLInputElement;
+
+  // Load button shows recent projects modal (sole handler — initSaveLoad skips this button)
+  loadBtn.addEventListener('click', () => {
+    showRecentProjectsModal();
+  });
+
+  document.getElementById('recent-cancel')!.addEventListener('click', () => {
+    modal.classList.add('hidden');
+  });
+  document.getElementById('recent-load-file')!.addEventListener('click', () => {
+    modal.classList.add('hidden');
+    fileInput.click();
+  });
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) modal.classList.add('hidden');
+  });
+}
+
+async function showRecentProjectsModal(): Promise<void> {
+  const modal = document.getElementById('recent-modal')!;
+  const list = document.getElementById('recent-project-list')!;
+
+  modal.classList.remove('hidden');
+  list.innerHTML = '<div class="element-hint" style="text-align:center;padding:20px">Loading...</div>';
+
+  try {
+    const projects = await getRecent();
+    list.innerHTML = '';
+
+    if (projects.length === 0) {
+      list.innerHTML = '<div class="element-hint" style="text-align:center;padding:20px">No recent projects</div>';
+      return;
+    }
+
+    for (const p of projects) {
+      const item = document.createElement('div');
+      item.className = 'recent-project-item';
+      const dateStr = new Date(p.savedAt).toLocaleDateString();
+      item.innerHTML = `
+        ${p.thumbnail ? `<img src="${p.thumbnail}" class="recent-project-thumb" alt="">` : '<div class="recent-project-thumb"></div>'}
+        <div class="recent-project-info">
+          <div class="recent-project-name">${escapeHtml(p.name)}</div>
+          <div class="recent-project-date">${dateStr}</div>
+        </div>
+        <button class="recent-project-delete" title="Delete">&times;</button>
+      `;
+
+      // Click to load
+      item.addEventListener('click', (e) => {
+        if ((e.target as Element).closest('.recent-project-delete')) return;
+        modal.classList.add('hidden');
+        const blob = new Blob([p.projectJSON], { type: 'application/json' });
+        const file = new File([blob], `${p.name}.maplayout`);
+        loadProject(file);
+      });
+
+      // Delete button
+      item.querySelector('.recent-project-delete')!.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        await deleteRecent(p.id);
+        item.remove();
+        if (list.children.length === 0) {
+          list.innerHTML = '<div class="element-hint" style="text-align:center;padding:20px">No recent projects</div>';
+        }
+      });
+
+      list.appendChild(item);
+    }
+  } catch (err) {
+    list.innerHTML = '<div class="element-hint" style="text-align:center;padding:20px">Failed to load recent projects</div>';
+  }
+}
+
+// ─── Feature 15: Custom Basemap URL ──────────────────────────────────
+
+function initCustomBasemap(): void {
+  // Restore from localStorage
+  const savedUrl = localStorage.getItem('maplayout-custom-basemap');
+  if (savedUrl) {
+    (document.getElementById('custom-basemap-url') as HTMLInputElement).value = savedUrl;
+  }
+
+  document.getElementById('btn-apply-custom-basemap')!.addEventListener('click', () => {
+    const url = (document.getElementById('custom-basemap-url') as HTMLInputElement).value.trim();
+    if (!url) return;
+
+    if (!url.includes('{x}') || !url.includes('{y}') || !url.includes('{z}')) {
+      alert('URL must contain {x}, {y}, and {z} placeholders');
+      return;
+    }
+
+    applyCustomBasemap(url);
+    localStorage.setItem('maplayout-custom-basemap', url);
+    updateStatus('Custom basemap applied');
+  });
+}
+
+function applyCustomBasemap(url: string): void {
+  const sourceId = 'custom-basemap-source';
+  const layerId = 'custom-basemap-layer';
+
+  // Remove existing custom basemap
+  if (map.getLayer(layerId)) map.removeLayer(layerId);
+  if (map.getSource(sourceId)) map.removeSource(sourceId);
+
+  // Add new source with the URL template
+  map.addSource(sourceId, {
+    type: 'raster',
+    tiles: [url],
+    tileSize: 256,
+  });
+
+  // Add layer below the first non-raster layer
+  map.addLayer({
+    id: layerId,
+    type: 'raster',
+    source: sourceId,
+  }, 'countries-fill');
+}
+
+// ─── Feature 14: Elevation / Hillshade Toggle ────────────────────────
+
+function initHillshade(): void {
+  document.getElementById('el-hillshade')!.addEventListener('change', () => {
+    const enabled = (document.getElementById('el-hillshade') as HTMLInputElement).checked;
+    state.hillshadeEnabled = enabled;
+    toggleHillshade(enabled);
+  });
+}
+
+function toggleHillshade(enabled: boolean): void {
+  const sourceId = 'terrain-rgb';
+  const layerId = 'hillshade-layer';
+
+  if (enabled) {
+    if (!map.getSource(sourceId)) {
+      map.addSource(sourceId, {
+        type: 'raster-dem',
+        tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
+        tileSize: 256,
+        encoding: 'terrarium',
+      });
+    }
+    if (!map.getLayer(layerId)) {
+      map.addLayer({
+        id: layerId,
+        type: 'hillshade',
+        source: sourceId,
+        paint: {
+          'hillshade-exaggeration': 0.5,
+          'hillshade-shadow-color': '#473B24',
+          'hillshade-highlight-color': '#ffffff',
+          'hillshade-illumination-direction': 315,
+        },
+      }, 'countries-fill');
+    }
+  } else {
+    if (map.getLayer(layerId)) map.removeLayer(layerId);
+    if (map.getSource(sourceId)) map.removeSource(sourceId);
+  }
+}
+
+// ─── Feature 13: Map Callout Annotations ─────────────────────────────
+
+let calloutPickMode = false;
+
+function initCallouts(): void {
+  document.getElementById('btn-add-callout')!.addEventListener('click', () => {
+    // Cancel measurement mode if active
+    if (measureMode) setMeasureMode(null);
+    calloutPickMode = true;
+    updateStatus('Click on the map to place a callout target...');
+    map.getCanvas().style.cursor = 'crosshair';
+  });
+
+  map.on('click', (e) => {
+    if (!calloutPickMode) return;
+    calloutPickMode = false;
+    map.getCanvas().style.cursor = '';
+
+    const text = prompt('Enter callout label:');
+    if (!text) return;
+
+    const callout: CalloutAnnotation = {
+      id: `callout-${Date.now()}`,
+      text,
+      targetLngLat: { lng: e.lngLat.lng, lat: e.lngLat.lat },
+      position: { x: pageConfig.pageWidthMM / 2, y: pageConfig.pageHeightMM / 2 },
+      fontSize: 2.5,
+      color: '#1a1a1a',
+      backgroundColor: '#ffffffee',
+    };
+
+    // Compute SVG target position from LngLat if we have mainMapBBox
+    if (state.mainMapBBox) {
+      const bbox = state.mainMapBBox;
+      const m = pageConfig.marginMM;
+      const mainFrame = {
+        x: m + 50,
+        y: m + 3,
+        width: pageConfig.pageWidthMM - m * 2 - 55,
+        height: pageConfig.pageHeightMM - m * 2 - 30,
+      };
+      const relX = (e.lngLat.lng - bbox.west) / (bbox.east - bbox.west);
+      const relY = (bbox.north - e.lngLat.lat) / (bbox.north - bbox.south);
+      callout.targetSVG = {
+        x: mainFrame.x + relX * mainFrame.width,
+        y: mainFrame.y + relY * mainFrame.height,
+      };
+      // Position label offset from target
+      callout.position = {
+        x: callout.targetSVG.x + 10,
+        y: callout.targetSVG.y - 10,
+      };
+    }
+
+    if (!state.callouts) state.callouts = [];
+    state.callouts.push(callout);
+    pushHistory();
+    rebuildSVGOnly();
+    renderCalloutList();
+    updateStatus(`Callout "${text}" added`);
+  });
+}
+
+function renderCalloutList(): void {
+  const container = document.getElementById('callout-list')!;
+  container.innerHTML = '';
+
+  for (const ca of state.callouts || []) {
+    const div = document.createElement('div');
+    div.className = 'callout-list-item';
+    div.innerHTML = `
+      <span class="cl-label">${escapeHtml(ca.text)}</span>
+      <button class="cl-remove-btn" title="Delete">&times;</button>
+    `;
+    div.querySelector('.cl-remove-btn')!.addEventListener('click', (e) => {
+      e.stopPropagation();
+      state.callouts = state.callouts!.filter(c => c.id !== ca.id);
+      pushHistory();
+      rebuildSVGOnly();
+      renderCalloutList();
+    });
+    container.appendChild(div);
+  }
+}
+
+// ─── Feature 11: Measurement Tools ───────────────────────────────────
+
+let measureMode: 'distance' | 'area' | null = null;
+let measurePoints: { lng: number; lat: number }[] = [];
+const MEASURE_SOURCE = 'measure-source';
+const MEASURE_LAYER_LINE = 'measure-line';
+const MEASURE_LAYER_FILL = 'measure-fill';
+
+function initMeasurementTools(): void {
+  document.getElementById('btn-measure-distance')!.addEventListener('click', () => {
+    setMeasureMode(measureMode === 'distance' ? null : 'distance');
+  });
+  document.getElementById('btn-measure-area')!.addEventListener('click', () => {
+    setMeasureMode(measureMode === 'area' ? null : 'area');
+  });
+  document.getElementById('btn-measure-clear')!.addEventListener('click', clearMeasurements);
+
+  // Add empty source/layers for measurement
+  map.addSource(MEASURE_SOURCE, {
+    type: 'geojson',
+    data: { type: 'FeatureCollection', features: [] },
+  });
+  map.addLayer({
+    id: MEASURE_LAYER_LINE,
+    type: 'line',
+    source: MEASURE_SOURCE,
+    paint: { 'line-color': '#e53e3e', 'line-width': 2, 'line-dasharray': [3, 2] },
+  });
+  map.addLayer({
+    id: MEASURE_LAYER_FILL,
+    type: 'fill',
+    source: MEASURE_SOURCE,
+    paint: { 'fill-color': '#e53e3e', 'fill-opacity': 0.15 },
+    filter: ['==', '$type', 'Polygon'],
+  });
+
+  map.on('click', (e) => {
+    if (!measureMode) return;
+    measurePoints.push({ lng: e.lngLat.lng, lat: e.lngLat.lat });
+    updateMeasureGeometry();
+  });
+
+  map.on('dblclick', (e) => {
+    if (!measureMode || measurePoints.length < 2) return;
+    e.preventDefault(); // Prevent map zoom on double-click
+
+    if (measureMode === 'distance') {
+      const dist = computeHaversineDistance(measurePoints);
+      updateStatus(`Distance: ${formatMeasurement(dist)}`);
+    } else if (measureMode === 'area' && measurePoints.length >= 3) {
+      const area = computeSphericalArea(measurePoints);
+      updateStatus(`Area: ${formatArea(area)}`);
+    }
+    setMeasureMode(null);
+  });
+}
+
+function setMeasureMode(mode: 'distance' | 'area' | null): void {
+  measureMode = mode;
+  measurePoints = [];
+
+  // Cancel callout pick mode if entering measurement
+  if (mode && calloutPickMode) {
+    calloutPickMode = false;
+  }
+
+  const distBtn = document.getElementById('btn-measure-distance')!;
+  const areaBtn = document.getElementById('btn-measure-area')!;
+  distBtn.classList.toggle('active', mode === 'distance');
+  areaBtn.classList.toggle('active', mode === 'area');
+
+  if (mode) {
+    map.getCanvas().style.cursor = 'crosshair';
+    map.doubleClickZoom.disable(); // Prevent map zoom on dblclick-to-finish
+    updateStatus(`${mode === 'distance' ? 'Distance' : 'Area'} mode: click points, double-click to finish`);
+  } else {
+    map.getCanvas().style.cursor = '';
+    map.doubleClickZoom.enable();
+  }
+}
+
+function updateMeasureGeometry(): void {
+  const coords = measurePoints.map(p => [p.lng, p.lat]);
+  const features: GeoJSON.Feature[] = [];
+
+  if (measureMode === 'distance' && coords.length >= 2) {
+    features.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: coords }, properties: {} });
+  } else if (measureMode === 'area' && coords.length >= 3) {
+    features.push({ type: 'Feature', geometry: { type: 'Polygon', coordinates: [[...coords, coords[0]]] }, properties: {} });
+  }
+  // Also show line for area mode
+  if (measureMode === 'area' && coords.length >= 2) {
+    features.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: [...coords, coords[0]] }, properties: {} });
+  }
+
+  (map.getSource(MEASURE_SOURCE) as GeoJSONSource).setData({ type: 'FeatureCollection', features });
+}
+
+function clearMeasurements(): void {
+  measurePoints = [];
+  setMeasureMode(null);
+  (map.getSource(MEASURE_SOURCE) as GeoJSONSource)?.setData({ type: 'FeatureCollection', features: [] });
+  // Remove any label elements
+  document.querySelectorAll('.measurement-label').forEach(el => el.remove());
+}
+
+function computeHaversineDistance(points: { lng: number; lat: number }[]): number {
+  const R = 6371000; // meters
+  let total = 0;
+  for (let i = 1; i < points.length; i++) {
+    const p1 = points[i - 1], p2 = points[i];
+    const dLat = (p2.lat - p1.lat) * Math.PI / 180;
+    const dLng = (p2.lng - p1.lng) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(p1.lat * Math.PI / 180) * Math.cos(p2.lat * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+    total += R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+  return total;
+}
+
+function computeSphericalArea(points: { lng: number; lat: number }[]): number {
+  // Approximate area using Shoelace formula projected to meters
+  const R = 6371000;
+  const toRad = Math.PI / 180;
+  let area = 0;
+  const n = points.length;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    const xi = points[i].lng * toRad * R * Math.cos(points[i].lat * toRad);
+    const yi = points[i].lat * toRad * R;
+    const xj = points[j].lng * toRad * R * Math.cos(points[j].lat * toRad);
+    const yj = points[j].lat * toRad * R;
+    area += xi * yj - xj * yi;
+  }
+  return Math.abs(area / 2);
+}
+
+function formatMeasurement(meters: number): string {
+  if (meters >= 1000) return `${(meters / 1000).toFixed(2)} km`;
+  return `${meters.toFixed(1)} m`;
+}
+
+function formatArea(sqMeters: number): string {
+  if (sqMeters >= 1e6) return `${(sqMeters / 1e6).toFixed(2)} km²`;
+  if (sqMeters >= 1e4) return `${(sqMeters / 1e4).toFixed(2)} ha`;
+  return `${sqMeters.toFixed(1)} m²`;
+}
+
+// ─── Feature 12: Choropleth / Thematic Mapping ───────────────────────
+
+let choroplethCSVData: string[][] = [];
+let choroplethHeaders: string[] = [];
+
+function initChoropleth(): void {
+  const csvInput = document.getElementById('csv-file-input') as HTMLInputElement;
+  document.getElementById('btn-import-csv')!.addEventListener('click', () => csvInput.click());
+
+  csvInput.addEventListener('change', () => {
+    if (!csvInput.files?.length) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      parseCSV(reader.result as string);
+      csvInput.value = '';
+    };
+    reader.readAsText(csvInput.files[0]);
+  });
+
+  document.getElementById('btn-apply-choropleth')!.addEventListener('click', applyChoropleth);
+  document.getElementById('btn-clear-choropleth')!.addEventListener('click', clearChoropleth);
+}
+
+function parseCSV(text: string): void {
+  const lines = text.trim().split('\n');
+  if (lines.length < 2) { alert('CSV must have a header row and at least one data row'); return; }
+
+  choroplethHeaders = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+  choroplethCSVData = lines.slice(1).map(line => line.split(',').map(v => v.trim().replace(/^"|"$/g, '')));
+
+  // Populate column selectors
+  const joinSel = document.getElementById('choro-join-col') as HTMLSelectElement;
+  const valSel = document.getElementById('choro-value-col') as HTMLSelectElement;
+  joinSel.innerHTML = '';
+  valSel.innerHTML = '';
+
+  for (const h of choroplethHeaders) {
+    joinSel.add(new Option(h, h));
+    valSel.add(new Option(h, h));
+  }
+
+  // Auto-select value column (first numeric-looking column)
+  for (let i = 0; i < choroplethHeaders.length; i++) {
+    if (choroplethCSVData.length > 0 && !isNaN(parseFloat(choroplethCSVData[0][i]))) {
+      valSel.value = choroplethHeaders[i];
+      break;
+    }
+  }
+
+  document.getElementById('choropleth-controls')!.classList.remove('hidden');
+  updateStatus(`CSV loaded: ${choroplethCSVData.length} rows, ${choroplethHeaders.length} columns`);
+}
+
+function applyChoropleth(): void {
+  const joinCol = (document.getElementById('choro-join-col') as HTMLSelectElement).value;
+  const valueCol = (document.getElementById('choro-value-col') as HTMLSelectElement).value;
+  const method = (document.getElementById('choro-method') as HTMLSelectElement).value as 'equal-interval' | 'quantile';
+  const numClasses = parseInt((document.getElementById('choro-classes') as HTMLInputElement).value);
+  const colorStart = (document.getElementById('choro-color-start') as HTMLInputElement).value;
+  const colorEnd = (document.getElementById('choro-color-end') as HTMLInputElement).value;
+
+  const joinIdx = choroplethHeaders.indexOf(joinCol);
+  const valIdx = choroplethHeaders.indexOf(valueCol);
+  if (joinIdx < 0 || valIdx < 0) return;
+
+  // Build join map: name → value
+  const dataMap = new Map<string, number>();
+  const values: number[] = [];
+  for (const row of choroplethCSVData) {
+    const name = row[joinIdx];
+    const val = parseFloat(row[valIdx]);
+    if (name && !isNaN(val)) {
+      dataMap.set(name, val);
+      values.push(val);
+    }
+  }
+
+  if (values.length === 0) { alert('No valid numeric values found'); return; }
+  values.sort((a, b) => a - b);
+
+  // Compute breaks
+  const min = values[0], max = values[values.length - 1];
+  const breaks: number[] = [];
+
+  if (method === 'equal-interval') {
+    const step = (max - min) / numClasses;
+    for (let i = 1; i < numClasses; i++) breaks.push(min + step * i);
+  } else {
+    for (let i = 1; i < numClasses; i++) {
+      const idx = Math.floor((i / numClasses) * values.length);
+      breaks.push(values[idx]);
+    }
+  }
+
+  // Generate colors (RGB lerp)
+  const parseHex = (hex: string) => [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
+  const c1 = parseHex(colorStart), c2 = parseHex(colorEnd);
+  const colors: string[] = [];
+  for (let i = 0; i < numClasses; i++) {
+    const t = numClasses === 1 ? 0.5 : i / (numClasses - 1);
+    const r = Math.round(c1[0] + (c2[0] - c1[0]) * t);
+    const g = Math.round(c1[1] + (c2[1] - c1[1]) * t);
+    const b = Math.round(c1[2] + (c2[2] - c1[2]) * t);
+    colors.push(`rgb(${r},${g},${b})`);
+  }
+
+  // Build match expression for MapLibre
+  const getClass = (val: number): number => {
+    for (let i = 0; i < breaks.length; i++) {
+      if (val <= breaks[i]) return i;
+    }
+    return numClasses - 1;
+  };
+
+  // Build match expression: ['match', ['get', 'NAME'], name1, color1, name2, color2, ..., defaultColor]
+  const matchExpr: any[] = ['match', ['get', 'NAME']];
+  const legendEntries: { label: string; color: string }[] = [];
+
+  for (const [name, val] of dataMap) {
+    const cls = getClass(val);
+    matchExpr.push(name, colors[cls]);
+  }
+  matchExpr.push('rgba(0,0,0,0)'); // default
+
+  // Build legend
+  for (let i = 0; i < numClasses; i++) {
+    const lo = i === 0 ? min : breaks[i - 1];
+    const hi = i < breaks.length ? breaks[i] : max;
+    legendEntries.push({ label: `${lo.toFixed(1)} – ${hi.toFixed(1)}`, color: colors[i] });
+  }
+
+  // Apply to aoi-fill layer (or create a new choropleth layer)
+  const choroLayerId = 'choropleth-fill';
+  if (map.getLayer(choroLayerId)) map.removeLayer(choroLayerId);
+
+  if (map.getSource('countries')) {
+    map.addLayer({
+      id: choroLayerId,
+      type: 'fill',
+      source: 'countries',
+      paint: {
+        'fill-color': matchExpr as any,
+        'fill-opacity': 0.7,
+      },
+    }, 'countries-border');
+  }
+
+  // Store config
+  state.choropleth = {
+    enabled: true,
+    csvData: choroplethCSVData.map(r => r.join(',')).join('\n'),
+    joinColumn: joinCol,
+    valueColumn: valueCol,
+    classificationMethod: method,
+    numClasses,
+    colorStart,
+    colorEnd,
+    breaks,
+    legendEntries,
+  };
+
+  // Auto-set legend entries
+  state.customLegendEntries = legendEntries.map((e, i) => ({
+    id: `choro-${i}`,
+    label: e.label,
+    color: e.color,
+    type: 'fill' as const,
+    visible: true,
+  }));
+  renderLegendEntryList();
+  rebuildSVGOnly();
+
+  updateStatus(`Choropleth applied: ${numClasses} classes`);
+}
+
+function clearChoropleth(): void {
+  if (map.getLayer('choropleth-fill')) map.removeLayer('choropleth-fill');
+  state.choropleth = undefined;
+  state.customLegendEntries = undefined;
+  renderLegendEntryList();
+  rebuildSVGOnly();
+  updateStatus('Choropleth cleared');
+}
+
+// ─── Scale Text ──────────────────────────────────────────────────────
+
+function initScaleText(): void {
+  const cb = document.getElementById('el-scale-text') as HTMLInputElement;
+  cb.addEventListener('change', () => {
+    if (cb.checked) {
+      const m = pageConfig.marginMM;
+      state.scaleText = {
+        visible: true,
+        position: { x: m + 55, y: pageConfig.pageHeightMM - m - 6 },
+        fontSize: 2.2,
+      };
+    } else {
+      if (state.scaleText) state.scaleText.visible = false;
+    }
+    pushHistory();
+    rebuildSVGOnly();
+  });
+}
+
+// ─── Disclaimer Box ──────────────────────────────────────────────────
+
+function initDisclaimerBox(): void {
+  const cb = document.getElementById('el-disclaimer') as HTMLInputElement;
+  const panel = document.getElementById('disclaimer-settings')!;
+
+  cb.addEventListener('change', () => {
+    panel.classList.toggle('hidden', !cb.checked);
+    if (cb.checked) {
+      const m = pageConfig.marginMM;
+      state.disclaimerBox = state.disclaimerBox || {
+        visible: true,
+        position: { x: m + 3, y: pageConfig.pageHeightMM - m - 10 },
+        text: (document.getElementById('disclaimer-text') as HTMLTextAreaElement).value,
+        fontSize: 1.8,
+        width: 60,
+        backgroundColor: '#ffffff',
+        borderColor: '#cccccc',
+      };
+      state.disclaimerBox.visible = true;
+    } else if (state.disclaimerBox) {
+      state.disclaimerBox.visible = false;
+    }
+    pushHistory();
+    rebuildSVGOnly();
+  });
+
+  // Wire up settings inputs
+  const update = () => {
+    if (!state.disclaimerBox) return;
+    state.disclaimerBox.text = (document.getElementById('disclaimer-text') as HTMLTextAreaElement).value;
+    state.disclaimerBox.fontSize = parseFloat((document.getElementById('disclaimer-font-size') as HTMLInputElement).value);
+    state.disclaimerBox.width = parseFloat((document.getElementById('disclaimer-width') as HTMLInputElement).value);
+    state.disclaimerBox.backgroundColor = (document.getElementById('disclaimer-bg') as HTMLInputElement).value;
+    state.disclaimerBox.borderColor = (document.getElementById('disclaimer-border') as HTMLInputElement).value;
+    rebuildSVGOnly();
+  };
+
+  for (const id of ['disclaimer-text', 'disclaimer-font-size', 'disclaimer-width', 'disclaimer-bg', 'disclaimer-border']) {
+    document.getElementById(id)?.addEventListener('input', update);
+  }
+}
+
+// ─── QR Code ─────────────────────────────────────────────────────────
+
+function initQRCode(): void {
+  const cb = document.getElementById('el-qr-code') as HTMLInputElement;
+  const panel = document.getElementById('qr-settings')!;
+
+  cb.addEventListener('change', () => {
+    panel.classList.toggle('hidden', !cb.checked);
+    if (cb.checked) {
+      const m = pageConfig.marginMM;
+      const autoUrl = state.mainMapBBox
+        ? `https://www.openstreetmap.org/#map=10/${((state.mainMapBBox.north + state.mainMapBBox.south) / 2).toFixed(4)}/${((state.mainMapBBox.east + state.mainMapBBox.west) / 2).toFixed(4)}`
+        : 'https://www.openstreetmap.org/';
+      state.qrCode = state.qrCode || {
+        visible: true,
+        position: { x: pageConfig.pageWidthMM - m - 22, y: pageConfig.pageHeightMM - m - 24 },
+        size: 20,
+        url: autoUrl,
+      };
+      state.qrCode.visible = true;
+      (document.getElementById('qr-url') as HTMLInputElement).value = state.qrCode.url;
+    } else if (state.qrCode) {
+      state.qrCode.visible = false;
+    }
+    pushHistory();
+    rebuildSVGOnly();
+  });
+
+  document.getElementById('qr-size')?.addEventListener('input', () => {
+    if (state.qrCode) {
+      state.qrCode.size = parseInt((document.getElementById('qr-size') as HTMLInputElement).value);
+      rebuildSVGOnly();
+    }
+  });
+
+  document.getElementById('qr-url')?.addEventListener('change', () => {
+    if (state.qrCode) {
+      state.qrCode.url = (document.getElementById('qr-url') as HTMLInputElement).value;
+      rebuildSVGOnly();
+    }
+  });
+}
+
+// ─── Locator Map ─────────────────────────────────────────────────────
+
+function initLocatorMap(): void {
+  const cb = document.getElementById('el-locator-map') as HTMLInputElement;
+  const panel = document.getElementById('locator-settings')!;
+
+  cb.addEventListener('change', () => {
+    panel.classList.toggle('hidden', !cb.checked);
+    if (cb.checked) {
+      const m = pageConfig.marginMM;
+      state.locatorMap = state.locatorMap || {
+        visible: true,
+        position: { x: m + 3, y: m + 60 },
+        size: 40,
+      };
+      state.locatorMap.visible = true;
+    } else if (state.locatorMap) {
+      state.locatorMap.visible = false;
+    }
+    pushHistory();
+    rebuildSVGOnly();
+  });
+
+  document.getElementById('locator-size')?.addEventListener('input', () => {
+    if (state.locatorMap) {
+      state.locatorMap.size = parseInt((document.getElementById('locator-size') as HTMLInputElement).value);
+      rebuildSVGOnly();
+    }
+  });
+}
+
+// ─── Auto Labels ─────────────────────────────────────────────────────
+
+function initAutoLabels(): void {
+  const cb = document.getElementById('al-enabled') as HTMLInputElement;
+  const panel = document.getElementById('al-settings')!;
+
+  cb.addEventListener('change', () => {
+    panel.classList.toggle('hidden', !cb.checked);
+    if (cb.checked) {
+      state.autoLabels = state.autoLabels || {
+        enabled: true,
+        fontSize: 12,
+        color: '#1a1a1a',
+        haloColor: '#ffffff',
+        haloWidth: 1.5,
+      };
+      state.autoLabels.enabled = true;
+      applyAutoLabels();
+    } else {
+      if (state.autoLabels) state.autoLabels.enabled = false;
+      removeAutoLabels();
+    }
+    pushHistory();
+  });
+
+  const updateLabels = () => {
+    if (!state.autoLabels?.enabled) return;
+    state.autoLabels.fontSize = parseInt((document.getElementById('al-font-size') as HTMLInputElement).value);
+    state.autoLabels.color = (document.getElementById('al-color') as HTMLInputElement).value;
+    state.autoLabels.haloColor = (document.getElementById('al-halo-color') as HTMLInputElement).value;
+    state.autoLabels.haloWidth = parseFloat((document.getElementById('al-halo-width') as HTMLInputElement).value);
+    applyAutoLabels();
+  };
+
+  for (const id of ['al-font-size', 'al-color', 'al-halo-color', 'al-halo-width']) {
+    document.getElementById(id)?.addEventListener('input', updateLabels);
+  }
+}
+
+function applyAutoLabels(): void {
+  if (!state.autoLabels?.enabled) return;
+  const al = state.autoLabels;
+
+  // Add country name labels from the 'countries' source
+  if (map.getSource('countries')) {
+    if (!map.getLayer('auto-labels-countries')) {
+      map.addLayer({
+        id: 'auto-labels-countries',
+        type: 'symbol',
+        source: 'countries',
+        layout: {
+          'text-field': ['get', 'NAME'],
+          'text-size': al.fontSize,
+          'text-allow-overlap': false,
+          'text-padding': 5,
+        },
+        paint: {
+          'text-color': al.color,
+          'text-halo-color': al.haloColor,
+          'text-halo-width': al.haloWidth,
+        },
+      });
+    } else {
+      map.setLayoutProperty('auto-labels-countries', 'text-size', al.fontSize);
+      map.setPaintProperty('auto-labels-countries', 'text-color', al.color);
+      map.setPaintProperty('auto-labels-countries', 'text-halo-color', al.haloColor);
+      map.setPaintProperty('auto-labels-countries', 'text-halo-width', al.haloWidth);
+    }
+  }
+}
+
+function removeAutoLabels(): void {
+  if (map.getLayer('auto-labels-countries')) map.removeLayer('auto-labels-countries');
+}
+
+// ─── Symbol Library ──────────────────────────────────────────────────
+
+let symbolPickMode = false;
+let selectedSymbolId: string | null = null;
+
+function initSymbolLibrary(): void {
+  const grid = document.getElementById('symbol-grid')!;
+  const controls = document.getElementById('symbol-controls')!;
+
+  // Populate symbol grid
+  for (const sym of SYMBOL_CATALOG) {
+    const btn = document.createElement('button');
+    btn.className = 'symbol-grid-btn';
+    btn.title = sym.name;
+    btn.dataset.symbolId = sym.id;
+    btn.innerHTML = `<svg viewBox="${sym.viewBox}"><path d="${sym.svgPath}"/></svg>`;
+    btn.addEventListener('click', () => {
+      if (selectedSymbolId === sym.id) {
+        // Deselect
+        selectedSymbolId = null;
+        symbolPickMode = false;
+        btn.classList.remove('active');
+        controls.classList.add('hidden');
+      } else {
+        grid.querySelectorAll('.symbol-grid-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        selectedSymbolId = sym.id;
+        symbolPickMode = true;
+        controls.classList.remove('hidden');
+        updateStatus(`Click on the map to place "${sym.name}" symbol`);
+      }
+    });
+    grid.appendChild(btn);
+  }
+
+  // Map click handler for symbol placement
+  map.on('click', (e: any) => {
+    if (!symbolPickMode || !selectedSymbolId) return;
+
+    const sym: SymbolAnnotation = {
+      id: `sym-${Date.now()}`,
+      symbolId: selectedSymbolId,
+      targetLngLat: { lng: e.lngLat.lng, lat: e.lngLat.lat },
+      size: parseFloat((document.getElementById('sym-size') as HTMLInputElement).value),
+      color: (document.getElementById('sym-color') as HTMLInputElement).value,
+    };
+
+    if (!state.symbols) state.symbols = [];
+    state.symbols.push(sym);
+
+    // Convert lngLat to SVG coords (reuse from callouts pattern)
+    recomputeSymbolSVGPositions();
+    pushHistory();
+    rebuildSVGOnly();
+    renderSymbolList();
+  });
+}
+
+function recomputeSymbolSVGPositions(): void {
+  if (!state.symbols || !state.mainMapBBox) return;
+  const bbox = state.mainMapBBox;
+  const m = pageConfig.marginMM;
+  const mainFrame = {
+    x: m + 50,
+    y: m + 3,
+    width: pageConfig.pageWidthMM - m * 2 - 55,
+    height: pageConfig.pageHeightMM - m * 2 - 30,
+  };
+
+  for (const sym of state.symbols) {
+    const lng = sym.targetLngLat.lng;
+    const lat = sym.targetLngLat.lat;
+    const px = mainFrame.x + ((lng - bbox.west) / (bbox.east - bbox.west)) * mainFrame.width;
+    const py = mainFrame.y + ((bbox.north - lat) / (bbox.north - bbox.south)) * mainFrame.height;
+    sym.targetSVG = { x: px, y: py };
+  }
+}
+
+function renderSymbolList(): void {
+  const container = document.getElementById('symbol-list');
+  if (!container) return;
+  container.innerHTML = '';
+
+  for (const sym of state.symbols || []) {
+    const def = getSymbolById(sym.symbolId);
+    const div = document.createElement('div');
+    div.className = 'sym-list-item';
+    div.innerHTML = `
+      <span class="sym-label">${def?.name || sym.symbolId}${sym.label ? ': ' + sym.label : ''}</span>
+      <button class="ct-remove-btn" title="Delete">&times;</button>
+    `;
+    div.querySelector('.ct-remove-btn')!.addEventListener('click', () => {
+      state.symbols = state.symbols?.filter(s => s.id !== sym.id);
+      pushHistory();
+      rebuildSVGOnly();
+      renderSymbolList();
+    });
+    container.appendChild(div);
+  }
+}
+
+// ─── Map Label Language ──────────────────────────────────────────────
+
+function initMapLabelLang(): void {
+  const sel = document.getElementById('map-label-lang') as HTMLSelectElement;
+  sel.addEventListener('change', () => {
+    state.mapLabelLang = sel.value;
+    // Update auto-label layer if active
+    if (state.autoLabels?.enabled && map.getLayer('auto-labels-countries')) {
+      // Natural Earth data only has NAME (English), so we note the limitation
+      // but still set the text-field property
+      const fieldExpr = sel.value === 'en' || sel.value === 'local'
+        ? ['get', 'NAME']
+        : ['coalesce', ['get', `name_${sel.value}`], ['get', 'NAME']];
+      map.setLayoutProperty('auto-labels-countries', 'text-field', fieldExpr as any);
+    }
+    pushHistory();
+  });
+}
+
+// ─── Color Palettes ──────────────────────────────────────────────────
+
+function initColorPalettes(): void {
+  const grid = document.getElementById('palette-grid')!;
+
+  for (const pal of COLOR_PALETTES) {
+    const btn = document.createElement('button');
+    btn.className = 'palette-swatch-btn';
+    btn.dataset.paletteId = pal.id;
+
+    // Color ramp preview (use 5-class colors)
+    const colors = pal.colors[5] || pal.colors[3];
+    const ramp = document.createElement('div');
+    ramp.className = 'palette-ramp';
+    for (const c of colors) {
+      const span = document.createElement('span');
+      span.style.backgroundColor = c;
+      ramp.appendChild(span);
+    }
+    btn.appendChild(ramp);
+
+    const name = document.createElement('span');
+    name.className = 'palette-name';
+    name.textContent = pal.name;
+    btn.appendChild(name);
+
+    btn.addEventListener('click', () => {
+      // Apply palette to choropleth
+      const numClasses = parseInt((document.getElementById('choro-classes') as HTMLInputElement)?.value || '5');
+      const paletteColors = getPaletteColors(pal.id, numClasses);
+      if (!paletteColors) return;
+
+      // Set the color start/end from first and last palette colors
+      (document.getElementById('choro-color-start') as HTMLInputElement).value = paletteColors[0];
+      (document.getElementById('choro-color-end') as HTMLInputElement).value = paletteColors[paletteColors.length - 1];
+
+      // Store palette ID
+      if (state.choropleth) {
+        state.choropleth.paletteId = pal.id;
+        state.choropleth.colorStart = paletteColors[0];
+        state.choropleth.colorEnd = paletteColors[paletteColors.length - 1];
+      }
+
+      // Mark active
+      grid.querySelectorAll('.palette-swatch-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      updateStatus(`Applied palette: ${pal.name}`);
+    });
+
+    grid.appendChild(btn);
+  }
+}
+
+// ─── Atlas / Map Series ──────────────────────────────────────────────
+
+function initAtlasGenerator(): void {
+  const cb = document.getElementById('el-atlas') as HTMLInputElement;
+  const panel = document.getElementById('atlas-settings')!;
+
+  cb.addEventListener('change', () => {
+    panel.classList.toggle('hidden', !cb.checked);
+    if (cb.checked) {
+      state.atlas = state.atlas || {
+        enabled: true, cols: 2, rows: 2, overlap: 10,
+        currentPage: 0, totalPages: 4, pageExtents: [],
+      };
+      state.atlas.enabled = true;
+    } else if (state.atlas) {
+      state.atlas.enabled = false;
+    }
+    pushHistory();
+    rebuildSVGOnly();
+  });
+
+  document.getElementById('atlas-overlap')?.addEventListener('input', () => {
+    const val = (document.getElementById('atlas-overlap') as HTMLInputElement).value;
+    const span = document.getElementById('atlas-overlap-val');
+    if (span) span.textContent = `${val}%`;
+  });
+
+  document.getElementById('btn-atlas-generate')?.addEventListener('click', () => {
+    if (!state.atlas || !state.mainMapBBox) {
+      alert('Please select an AOI first');
+      return;
+    }
+
+    const cols = parseInt((document.getElementById('atlas-cols') as HTMLInputElement).value);
+    const rows = parseInt((document.getElementById('atlas-rows') as HTMLInputElement).value);
+    const overlap = parseInt((document.getElementById('atlas-overlap') as HTMLInputElement).value) / 100;
+
+    state.atlas.cols = cols;
+    state.atlas.rows = rows;
+    state.atlas.overlap = overlap * 100;
+    state.atlas.totalPages = cols * rows;
+    state.atlas.currentPage = 0;
+
+    // Compute page extents
+    const bbox = state.mainMapBBox;
+    const lngSpan = (bbox.east - bbox.west) / cols;
+    const latSpan = (bbox.north - bbox.south) / rows;
+    const lngOverlap = lngSpan * overlap;
+    const latOverlap = latSpan * overlap;
+
+    state.atlas.pageExtents = [];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        state.atlas.pageExtents.push(clampBBox({
+          west: bbox.west + c * lngSpan - (c > 0 ? lngOverlap / 2 : 0),
+          south: bbox.south + (rows - 1 - r) * latSpan - (r < rows - 1 ? latOverlap / 2 : 0),
+          east: bbox.west + (c + 1) * lngSpan + (c < cols - 1 ? lngOverlap / 2 : 0),
+          north: bbox.south + (rows - r) * latSpan + (r > 0 ? latOverlap / 2 : 0),
+        }));
+      }
+    }
+
+    // Show navigation
+    document.getElementById('atlas-nav')?.classList.remove('hidden');
+    document.getElementById('btn-atlas-export')?.classList.remove('hidden');
+    updateAtlasPageLabel();
+    navigateAtlasPage(0);
+    pushHistory();
+  });
+
+  document.getElementById('btn-atlas-prev')?.addEventListener('click', () => {
+    if (state.atlas && state.atlas.currentPage > 0) {
+      navigateAtlasPage(state.atlas.currentPage - 1);
+    }
+  });
+
+  document.getElementById('btn-atlas-next')?.addEventListener('click', () => {
+    if (state.atlas && state.atlas.currentPage < state.atlas.totalPages - 1) {
+      navigateAtlasPage(state.atlas.currentPage + 1);
+    }
+  });
+
+  document.getElementById('btn-atlas-export')?.addEventListener('click', async () => {
+    if (!state.atlas) return;
+    updateStatus('Exporting atlas pages...');
+    // For now, export current page (full multi-page PDF would need more complex flow)
+    document.getElementById('btn-export')?.click();
+  });
+}
+
+function navigateAtlasPage(pageNum: number): void {
+  if (!state.atlas || !state.atlas.pageExtents[pageNum]) return;
+  state.atlas.currentPage = pageNum;
+
+  const extent = clampBBox(state.atlas.pageExtents[pageNum]);
+  map.fitBounds(
+    [[extent.west, extent.south], [extent.east, extent.north]],
+    { padding: 20, duration: 500 }
+  );
+
+  updateAtlasPageLabel();
+  // Re-capture after map moves
+  map.once('idle', () => {
+    rebuildSVGOnly();
+  });
+}
+
+function updateAtlasPageLabel(): void {
+  if (!state.atlas) return;
+  const label = document.getElementById('atlas-page-label');
+  if (label) label.textContent = `Page ${state.atlas.currentPage + 1} of ${state.atlas.totalPages}`;
+}
+
+// ─── Data Table ──────────────────────────────────────────────────────
+
+function initDataTable(): void {
+  const cb = document.getElementById('el-data-table') as HTMLInputElement;
+  const panel = document.getElementById('data-table-settings')!;
+  const fileInput = document.getElementById('table-csv-input') as HTMLInputElement;
+
+  cb.addEventListener('change', () => {
+    panel.classList.toggle('hidden', !cb.checked);
+    if (cb.checked) {
+      state.dataTable = state.dataTable || {
+        visible: true,
+        position: { x: pageConfig.pageWidthMM - pageConfig.marginMM - 85, y: pageConfig.pageHeightMM - pageConfig.marginMM - 40 },
+        headers: [],
+        rows: [],
+        fontSize: 1.8,
+        width: 80,
+        headerBg: '#2563eb',
+        headerColor: '#ffffff',
+        cellBg: '#f0f4f8',
+        borderColor: '#cccccc',
+        maxRows: 10,
+      };
+      state.dataTable.visible = true;
+    } else if (state.dataTable) {
+      state.dataTable.visible = false;
+    }
+    pushHistory();
+    rebuildSVGOnly();
+  });
+
+  document.getElementById('btn-import-table-csv')?.addEventListener('click', () => fileInput.click());
+
+  fileInput.addEventListener('change', () => {
+    if (!fileInput.files?.length) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = reader.result as string;
+      const lines = text.trim().split('\n');
+      if (lines.length < 2) { alert('CSV must have header + data rows'); return; }
+
+      const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+      const rows = lines.slice(1).map(line => line.split(',').map(v => v.trim().replace(/^"|"$/g, '')));
+
+      if (!state.dataTable) {
+        cb.checked = true;
+        cb.dispatchEvent(new Event('change'));
+      }
+      state.dataTable!.headers = headers;
+      state.dataTable!.rows = rows;
+      state.dataTable!.visible = true;
+      panel.classList.remove('hidden');
+      cb.checked = true;
+
+      pushHistory();
+      rebuildSVGOnly();
+      updateStatus(`Table imported: ${headers.length} columns, ${rows.length} rows`);
+    };
+    reader.readAsText(fileInput.files[0]);
+    fileInput.value = '';
+  });
+
+  // Update settings on input
+  const updateTable = () => {
+    if (!state.dataTable) return;
+    state.dataTable.maxRows = parseInt((document.getElementById('dt-max-rows') as HTMLInputElement).value);
+    state.dataTable.width = parseInt((document.getElementById('dt-width') as HTMLInputElement).value);
+    state.dataTable.fontSize = parseFloat((document.getElementById('dt-font-size') as HTMLInputElement).value);
+    state.dataTable.headerBg = (document.getElementById('dt-header-bg') as HTMLInputElement).value;
+    state.dataTable.headerColor = (document.getElementById('dt-header-color') as HTMLInputElement).value;
+    rebuildSVGOnly();
+  };
+
+  for (const id of ['dt-max-rows', 'dt-width', 'dt-font-size', 'dt-header-bg', 'dt-header-color']) {
+    document.getElementById(id)?.addEventListener('input', updateTable);
+  }
+}
+
+// ─── Custom Fonts ────────────────────────────────────────────────────
+
+function initCustomFonts(): void {
+  const fileInput = document.getElementById('font-file-input') as HTMLInputElement;
+
+  document.getElementById('btn-import-font')?.addEventListener('click', () => fileInput.click());
+
+  fileInput.addEventListener('change', () => {
+    if (!fileInput.files?.length) return;
+    const file = fileInput.files[0];
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const dataUrl = reader.result as string;
+      const name = file.name.replace(/\.(ttf|woff|woff2)$/i, '');
+      const format = file.name.endsWith('.woff2') ? 'woff2' : file.name.endsWith('.woff') ? 'woff' : 'truetype';
+
+      // Register font
+      try {
+        const face = new FontFace(name, `url(${dataUrl})`);
+        const loaded = await face.load();
+        (document.fonts as any).add(loaded);
+      } catch (err) {
+        alert(`Failed to load font: ${(err as Error).message}`);
+        return;
+      }
+
+      if (!state.customFonts) state.customFonts = [];
+      state.customFonts.push({ name, dataUrl, format });
+
+      // Add to font dropdowns
+      addCustomFontToDropdowns(name);
+
+      pushHistory();
+      renderCustomFontList();
+      rebuildSVGOnly();
+      updateStatus(`Font "${name}" imported`);
+    };
+    reader.readAsDataURL(file);
+    fileInput.value = '';
+  });
+}
+
+function addCustomFontToDropdowns(fontName: string): void {
+  // Add to text edit popup font dropdown
+  const teFont = document.getElementById('te-font') as HTMLSelectElement;
+  if (teFont && !teFont.querySelector(`option[value*="${fontName}"]`)) {
+    teFont.add(new Option(fontName, `'${fontName}', sans-serif`));
+  }
+}
+
+function renderCustomFontList(): void {
+  const container = document.getElementById('custom-font-list');
+  if (!container) return;
+  container.innerHTML = '';
+
+  for (const cf of state.customFonts || []) {
+    const div = document.createElement('div');
+    div.className = 'font-list-item';
+    div.innerHTML = `
+      <span class="font-name" style="font-family:'${cf.name}',sans-serif">${cf.name}</span>
+      <button class="ct-remove-btn" title="Remove">&times;</button>
+    `;
+    div.querySelector('.ct-remove-btn')!.addEventListener('click', () => {
+      state.customFonts = state.customFonts?.filter(f => f.name !== cf.name);
+      pushHistory();
+      rebuildSVGOnly();
+      renderCustomFontList();
+    });
+    container.appendChild(div);
+  }
+}
+
+// ─── Version History ─────────────────────────────────────────────────
+
+let versionAutoSaveInterval: ReturnType<typeof setInterval> | null = null;
+let lastAutoSaveState = '';
+
+function initVersionHistory(): void {
+  // Auto-save every 5 minutes
+  versionAutoSaveInterval = setInterval(() => {
+    autoSaveVersion();
+  }, 5 * 60 * 1000);
+
+  // History button
+  document.getElementById('btn-version-history')?.addEventListener('click', () => {
+    showVersionHistoryModal();
+  });
+
+  document.getElementById('version-history-close')?.addEventListener('click', () => {
+    document.getElementById('version-history-modal')?.classList.add('hidden');
+  });
+
+  // Close on overlay click
+  document.getElementById('version-history-modal')?.addEventListener('click', (e) => {
+    if ((e.target as HTMLElement).classList.contains('modal-overlay')) {
+      document.getElementById('version-history-modal')?.classList.add('hidden');
+    }
+  });
+}
+
+async function autoSaveVersion(): Promise<void> {
+  const currentState = JSON.stringify({
+    fields: state.fields,
+    elementOverrides: state.elementOverrides,
+    customTexts: state.customTexts?.length,
+    drawings: state.drawings?.length,
+  });
+
+  if (currentState === lastAutoSaveState) return; // No changes
+  lastAutoSaveState = currentState;
+
+  const projectId = state.fields.title || 'untitled';
+  let thumbnail = '';
+  if (layoutSVG) {
+    try {
+      thumbnail = await generateThumbnail(layoutSVG);
+    } catch { /* ignore */ }
+  }
+
+  const snapshot: VersionSnapshot = {
+    id: `ver-${Date.now()}`,
+    projectId,
+    savedAt: new Date().toISOString(),
+    thumbnail,
+    stateJSON: JSON.stringify({
+      pageConfig: { ...pageConfig },
+      fields: state.fields,
+      elementOverrides: state.elementOverrides,
+      customTexts: state.customTexts,
+      drawings: state.drawings,
+      logoImages: state.logoImages,
+      grid: state.grid,
+      boundaryColors: state.boundaryColors,
+      customLegendEntries: state.customLegendEntries,
+      activeLayers: state.activeLayers,
+      renderedMaps: state.renderedMaps,
+      mainMapBBox: state.mainMapBBox,
+      scaleBar: state.scaleBar,
+      cropMarks: state.cropMarks,
+      watermark: state.watermark,
+      frameBorderStyle: state.frameBorderStyle,
+      callouts: state.callouts,
+      choropleth: state.choropleth,
+      scaleText: state.scaleText,
+      disclaimerBox: state.disclaimerBox,
+      qrCode: state.qrCode,
+      locatorMap: state.locatorMap,
+      symbols: state.symbols,
+      dataTable: state.dataTable,
+    }),
+  };
+
+  try {
+    await saveVersion(snapshot);
+  } catch { /* ignore */ }
+}
+
+async function showVersionHistoryModal(): Promise<void> {
+  const modal = document.getElementById('version-history-modal')!;
+  modal.classList.remove('hidden');
+
+  const list = document.getElementById('version-history-list')!;
+  list.innerHTML = '<div class="element-hint" style="text-align:center;padding:20px">Loading...</div>';
+
+  const projectId = state.fields.title || 'untitled';
+  try {
+    const versions = await getVersions(projectId);
+    if (versions.length === 0) {
+      list.innerHTML = '<div class="element-hint" style="text-align:center;padding:20px">No versions saved yet. Auto-saves every 5 minutes.</div>';
+      return;
+    }
+
+    list.innerHTML = '';
+    for (const v of versions) {
+      const div = document.createElement('div');
+      div.className = 'version-item';
+
+      const thumbSrc = v.thumbnail || '';
+      const date = new Date(v.savedAt);
+      const timeStr = date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+      div.innerHTML = `
+        ${thumbSrc ? `<img class="version-thumb" src="${thumbSrc}" alt="Preview">` : '<div class="version-thumb"></div>'}
+        <div class="version-info">
+          <span class="version-time">${timeStr}</span>
+          ${v.label ? `<span class="version-label">${v.label}</span>` : ''}
+          <div class="version-actions">
+            <button data-action="restore" title="Restore this version">Restore</button>
+            <button data-action="label" title="Add/edit label">Label</button>
+            <button data-action="delete" title="Delete">Delete</button>
+          </div>
+        </div>
+      `;
+
+      div.querySelector('[data-action="restore"]')?.addEventListener('click', () => {
+        try {
+          const parsed = JSON.parse(v.stateJSON);
+          // Restore state from version
+          if (parsed.fields) state.fields = parsed.fields;
+          if (parsed.elementOverrides) state.elementOverrides = parsed.elementOverrides;
+          if (parsed.customTexts) state.customTexts = parsed.customTexts;
+          if (parsed.drawings) state.drawings = parsed.drawings;
+          if (parsed.renderedMaps) state.renderedMaps = parsed.renderedMaps;
+          if (parsed.mainMapBBox) state.mainMapBBox = parsed.mainMapBBox;
+          if (parsed.scaleText) state.scaleText = parsed.scaleText;
+          if (parsed.disclaimerBox) state.disclaimerBox = parsed.disclaimerBox;
+          if (parsed.qrCode) state.qrCode = parsed.qrCode;
+          if (parsed.locatorMap) state.locatorMap = parsed.locatorMap;
+          if (parsed.symbols) state.symbols = parsed.symbols;
+          if (parsed.dataTable) state.dataTable = parsed.dataTable;
+          syncUIFromState();
+          rebuildSVGOnly();
+          pushHistory();
+          modal.classList.add('hidden');
+          updateStatus(`Restored version from ${timeStr}`);
+        } catch (err) {
+          alert('Failed to restore version');
+        }
+      });
+
+      div.querySelector('[data-action="label"]')?.addEventListener('click', async () => {
+        const newLabel = prompt('Enter a label for this version:', v.label || '');
+        if (newLabel !== null) {
+          await labelVersion(v.id, newLabel);
+          showVersionHistoryModal(); // Refresh
+        }
+      });
+
+      div.querySelector('[data-action="delete"]')?.addEventListener('click', async () => {
+        await deleteVersion(v.id);
+        showVersionHistoryModal(); // Refresh
+      });
+
+      list.appendChild(div);
+    }
+  } catch {
+    list.innerHTML = '<div class="element-hint" style="text-align:center;padding:20px">Failed to load version history</div>';
+  }
+}
+
+// ─── GeoPDF Metadata (integrated into export) ───────────────────────
+// No init needed — auto-embedded when AOI exists.
+// The PDFExporter.ts handles this via setProperties().
+
 // ─── Initialize ──────────────────────────────────────────────────────
 
 initMap()
@@ -3966,6 +6175,36 @@ initMap()
     initShortcutsModal();
     initI18n();
     handleURLParams();
+
+    // New feature init functions
+    initCropMarks();
+    initWatermarkControls();
+    initFrameBorderStyle();
+    initNorthArrowStyles();
+    initAlignmentToolbar();
+    initRulerGuides();
+    initQuickExport();
+    initTemplates();
+    initRecentProjects();
+    initCustomBasemap();
+    initHillshade();
+    initCallouts();
+    initMeasurementTools();
+    initChoropleth();
+
+    // New feature init functions
+    initScaleText();
+    initDisclaimerBox();
+    initQRCode();
+    initLocatorMap();
+    initAutoLabels();
+    initSymbolLibrary();
+    initMapLabelLang();
+    initColorPalettes();
+    initAtlasGenerator();
+    initDataTable();
+    initCustomFonts();
+    initVersionHistory();
 
     // Initial history snapshot
     pushHistory();

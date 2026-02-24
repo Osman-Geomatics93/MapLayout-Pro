@@ -6,8 +6,130 @@ import type { UserDataLayer } from './userdata';
 
 export interface ElementPosition { x: number; y: number; }
 
+export type NorthArrowStyle = 'simple' | 'compass-rose' | 'ornate' | 'minimal' | 'nato' | 'modern' | 'vintage';
+
+export type MapFrameBorderStyle = 'simple' | 'double' | 'shadow' | 'neatline-ticks' | 'rounded' | 'none';
+
+export interface WatermarkSettings {
+  enabled: boolean;
+  text: string;
+  fontSize: number;
+  color: string;
+  opacity: number;
+  angle: number;
+}
+
+export interface CalloutAnnotation {
+  id: string;
+  text: string;
+  targetLngLat: { lng: number; lat: number };
+  targetSVG?: { x: number; y: number };
+  position: ElementPosition;
+  fontSize: number;
+  color: string;
+  backgroundColor: string;
+  locked?: boolean;
+}
+
+export interface ChoroplethConfig {
+  enabled: boolean;
+  csvData?: string;
+  joinColumn: string;
+  valueColumn: string;
+  classificationMethod: 'equal-interval' | 'quantile';
+  numClasses: number;
+  colorStart: string;
+  colorEnd: string;
+  breaks?: number[];
+  legendEntries?: { label: string; color: string }[];
+  paletteId?: string;
+}
+
+// ─── New Feature Types ───────────────────────────────────────────────
+
+export interface ScaleTextSettings {
+  visible: boolean;
+  position: ElementPosition;
+  fontSize: number;
+}
+
+export interface DisclaimerBoxSettings {
+  visible: boolean;
+  position: ElementPosition;
+  text: string;
+  fontSize: number;
+  width: number;
+  backgroundColor: string;
+  borderColor: string;
+}
+
+export interface QRCodeSettings {
+  visible: boolean;
+  position: ElementPosition;
+  size: number;
+  url: string;
+}
+
+export interface LocatorMapSettings {
+  visible: boolean;
+  position: ElementPosition;
+  size: number;
+}
+
+export interface AutoLabelSettings {
+  enabled: boolean;
+  fontSize: number;
+  color: string;
+  haloColor: string;
+  haloWidth: number;
+}
+
+export interface SymbolAnnotation {
+  id: string;
+  symbolId: string;
+  targetLngLat: { lng: number; lat: number };
+  targetSVG?: { x: number; y: number };
+  size: number;
+  color: string;
+  label?: string;
+  locked?: boolean;
+}
+
+export type HatchPattern = 'none' | 'diagonal' | 'crosshatch' | 'horizontal' | 'vertical' | 'dots' | 'circles';
+
+export interface AtlasConfig {
+  enabled: boolean;
+  cols: number;
+  rows: number;
+  overlap: number;
+  currentPage: number;
+  totalPages: number;
+  pageExtents: import('./geo').BBox[];
+}
+
+export interface DataTableSettings {
+  visible: boolean;
+  position: ElementPosition;
+  headers: string[];
+  rows: string[][];
+  fontSize: number;
+  width: number;
+  headerBg: string;
+  headerColor: string;
+  cellBg: string;
+  borderColor: string;
+  maxRows: number;
+}
+
+export interface CustomFont {
+  name: string;
+  dataUrl: string;
+  format: string;
+}
+
 export interface NorthArrowOverrides {
   visible: boolean; position: ElementPosition; scale: number;
+  style?: NorthArrowStyle;
 }
 export interface TitleBlockOverrides {
   position: ElementPosition; fontSize: number;
@@ -25,6 +147,7 @@ export interface LegendEntry {
   color: string;
   type: 'fill' | 'line' | 'circle';
   visible: boolean;
+  pattern?: HatchPattern;
 }
 export interface ElementOverrides {
   northArrow: NorthArrowOverrides;
@@ -107,6 +230,40 @@ export interface LayoutState {
   grid?: GridSettings;
   /** Boundary color overrides */
   boundaryColors?: BoundaryColorSettings;
+  /** Print crop & bleed marks */
+  cropMarks?: boolean;
+  /** Watermark / draft stamp */
+  watermark?: WatermarkSettings;
+  /** Map frame border style */
+  frameBorderStyle?: MapFrameBorderStyle;
+  /** Ruler guides (user-dragged) */
+  guides?: { h: number[]; v: number[] };
+  /** Hillshade terrain toggle */
+  hillshadeEnabled?: boolean;
+  /** Map callout / label annotations */
+  callouts?: CalloutAnnotation[];
+  /** Choropleth / thematic mapping configuration */
+  choropleth?: ChoroplethConfig;
+  /** Scale text block (e.g., "Scale 1:50,000 at A3") */
+  scaleText?: ScaleTextSettings;
+  /** Disclaimer / data sources box */
+  disclaimerBox?: DisclaimerBoxSettings;
+  /** QR code linking to map location */
+  qrCode?: QRCodeSettings;
+  /** Overview locator map showing AOI on world outline */
+  locatorMap?: LocatorMapSettings;
+  /** Auto label placement settings */
+  autoLabels?: AutoLabelSettings;
+  /** Symbol / marker annotations */
+  symbols?: SymbolAnnotation[];
+  /** Map label language override */
+  mapLabelLang?: string;
+  /** Atlas / map series configuration */
+  atlas?: AtlasConfig;
+  /** Data table insert */
+  dataTable?: DataTableSettings;
+  /** Custom imported fonts */
+  customFonts?: CustomFont[];
 }
 
 export interface BoundaryColorSettings {
