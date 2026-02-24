@@ -322,14 +322,15 @@
         <div class="preview-toolbar">
           <span class="preview-label">Layout Preview</span>
           <div class="preview-zoom">
-            <button id="zoom-out" class="mini-btn" title="Zoom out (Ctrl+Scroll down)">-</button>
-            <span id="zoom-level">100%</span>
-            <button id="zoom-in" class="mini-btn" title="Zoom in (Ctrl+Scroll up)">+</button>
+            <button id="zoom-out" class="mini-btn" title="Zoom out">&#8722;</button>
+            <input type="range" id="zoom-slider" class="zoom-slider" min="20" max="400" value="100" title="Zoom level">
+            <span id="zoom-level" class="zoom-pct" title="Click to reset to 100%">100%</span>
+            <button id="zoom-in" class="mini-btn" title="Zoom in">+</button>
             <button id="zoom-fit" class="mini-btn" title="Fit to view">Fit</button>
           </div>
           <button id="btn-refresh-preview" class="mini-btn" title="Refresh preview">Refresh</button>
           <button id="btn-open-newtab" class="mini-btn" title="Open layout in new tab">New Tab</button>
-          <span class="preview-hint">Ctrl+Scroll on maps to zoom</span>
+          <span class="preview-hint">Scroll to zoom &middot; Ctrl+Scroll on maps to adjust</span>
         </div>
         <div class="preview-scroll" id="preview-scroll">
           <div id="layout-svg-host" class="layout-svg-host">
@@ -443,7 +444,9 @@
         <div class="shortcut-item"><kbd>Arrow Keys</kbd><span>Nudge Element</span></div>
         <div class="shortcut-item"><kbd>+/-</kbd><span>Resize Selected</span></div>
         <div class="shortcut-item"><kbd>Escape</kbd><span>Cancel / Deselect</span></div>
-        <div class="shortcut-item"><kbd>Ctrl+Scroll</kbd><span>Zoom Preview / Map</span></div>
+        <div class="shortcut-item"><kbd>Scroll</kbd><span>Zoom Preview</span></div>
+        <div class="shortcut-item"><kbd>Space+Drag</kbd><span>Pan Preview</span></div>
+        <div class="shortcut-item"><kbd>Ctrl+Scroll</kbd><span>Adjust Map Frame</span></div>
         <div class="shortcut-item"><kbd>Scroll on Element</kbd><span>Resize Element</span></div>
         <div class="shortcut-item"><kbd>Double-click</kbd><span>Add Text</span></div>
         <div class="shortcut-item"><kbd>L</kbd><span>Lock/Unlock Selected</span></div>

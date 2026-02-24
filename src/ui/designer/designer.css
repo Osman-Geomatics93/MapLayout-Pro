@@ -385,11 +385,42 @@ html, body {
   margin-left: auto;
 }
 
-.preview-zoom span {
+.zoom-pct {
   font-size: 11px;
   color: var(--text-secondary);
   min-width: 36px;
   text-align: center;
+  cursor: pointer;
+  user-select: none;
+  border-radius: 3px;
+  padding: 1px 4px;
+  transition: background 0.15s;
+}
+
+.zoom-pct:hover {
+  background: var(--bg-tertiary);
+}
+
+.zoom-slider {
+  width: 80px;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--bg-tertiary);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.zoom-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  border: 2px solid var(--bg-primary);
+  box-shadow: 0 0 2px rgba(0,0,0,0.2);
 }
 
 .mini-btn {

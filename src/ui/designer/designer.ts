@@ -1171,21 +1171,70 @@ function openPreviewInNewTab(): void {
   });
 }
 
-// Preview zoom — px per mm (2.5 ≈ 100% on screen)
-let previewScale = 2.5;
+// ─── Preview Zoom (modern zoom-to-cursor with multiplicative scaling) ─────
+
+const BASE_SCALE = 2.5; // px per mm at 100%
+const MIN_SCALE = 0.5;  // ~20%
+const MAX_SCALE = 10;   // ~400%
+let previewScale = BASE_SCALE;
 
 document.getElementById('zoom-in')!.addEventListener('click', () => {
-  setPreviewScale(previewScale + 0.3);
+  zoomPreviewBy(1.2);
 });
 document.getElementById('zoom-out')!.addEventListener('click', () => {
-  setPreviewScale(previewScale - 0.3);
+  zoomPreviewBy(1 / 1.2);
 });
 document.getElementById('zoom-fit')!.addEventListener('click', () => {
   fitPreviewToView();
 });
+// Click on percentage label → reset to 100%
+document.getElementById('zoom-level')!.addEventListener('click', () => {
+  setPreviewScale(BASE_SCALE);
+});
+// Zoom slider
+const zoomSlider = document.getElementById('zoom-slider') as HTMLInputElement;
+zoomSlider.addEventListener('input', () => {
+  const pct = parseInt(zoomSlider.value, 10);
+  setPreviewScale((pct / 100) * BASE_SCALE);
+});
+
+/** Apply a multiplicative zoom factor (e.g. 1.1 to zoom in 10%) */
+function zoomPreviewBy(factor: number, cursorX?: number, cursorY?: number): void {
+  const oldScale = previewScale;
+  const newScale = Math.round(Math.max(MIN_SCALE, Math.min(MAX_SCALE, oldScale * factor)) * 100) / 100;
+  if (newScale === oldScale) return;
+
+  const scrollEl = document.getElementById('preview-scroll')!;
+
+  // If cursor position provided, zoom toward that point
+  if (cursorX !== undefined && cursorY !== undefined) {
+    // Point in document-mm space that cursor was over
+    const mmX = (scrollEl.scrollLeft + cursorX) / oldScale;
+    const mmY = (scrollEl.scrollTop + cursorY) / oldScale;
+
+    previewScale = newScale;
+    updatePreviewZoom();
+
+    // Adjust scroll so the same mm-point stays under cursor
+    scrollEl.scrollLeft = mmX * newScale - cursorX;
+    scrollEl.scrollTop = mmY * newScale - cursorY;
+  } else {
+    // Zoom from center
+    const cx = scrollEl.scrollLeft + scrollEl.clientWidth / 2;
+    const cy = scrollEl.scrollTop + scrollEl.clientHeight / 2;
+    const mmX = cx / oldScale;
+    const mmY = cy / oldScale;
+
+    previewScale = newScale;
+    updatePreviewZoom();
+
+    scrollEl.scrollLeft = mmX * newScale - scrollEl.clientWidth / 2;
+    scrollEl.scrollTop = mmY * newScale - scrollEl.clientHeight / 2;
+  }
+}
 
 function setPreviewScale(newScale: number): void {
-  previewScale = Math.round(Math.max(0.5, Math.min(8, newScale)) * 100) / 100;
+  previewScale = Math.round(Math.max(MIN_SCALE, Math.min(MAX_SCALE, newScale)) * 100) / 100;
   updatePreviewZoom();
 }
 
@@ -1193,13 +1242,16 @@ function updatePreviewZoom(): void {
   const host = document.getElementById('layout-svg-host')!;
   host.style.width = `${pageConfig.pageWidthMM * previewScale}px`;
   host.style.height = `${pageConfig.pageHeightMM * previewScale}px`;
-  const pct = Math.round((previewScale / 2.5) * 100);
+  const pct = Math.round((previewScale / BASE_SCALE) * 100);
   document.getElementById('zoom-level')!.textContent = `${pct}%`;
+  // Sync slider
+  const slider = document.getElementById('zoom-slider') as HTMLInputElement;
+  if (slider) slider.value = String(pct);
 }
 
 function fitPreviewToView(): void {
   const scrollEl = document.getElementById('preview-scroll')!;
-  const padPx = 40; // padding around the page
+  const padPx = 40;
   const availW = scrollEl.clientWidth - padPx * 2;
   const availH = scrollEl.clientHeight - padPx * 2;
   const scaleW = availW / pageConfig.pageWidthMM;
@@ -1209,39 +1261,97 @@ function fitPreviewToView(): void {
 
 function initPreviewWheelZoom(): void {
   const scrollContainer = document.getElementById('preview-scroll')!;
-  scrollContainer.addEventListener('wheel', (e: WheelEvent) => {
-    // Ctrl+Wheel only
-    if (!e.ctrlKey && !e.metaKey) return;
 
-    // Don't interfere with scalable element resize (plain wheel)
+  // ── Wheel: zoom (plain scroll) / map-frame adjust (Ctrl+scroll) ──
+  scrollContainer.addEventListener('wheel', (e: WheelEvent) => {
     const target = e.target as Element;
-    if (target.closest?.('[data-element="northArrow"], [data-element="legend"]')) return;
 
     // Ctrl+Scroll over a map frame → zoom that map's content
-    const mapFrame = target.closest?.('[data-map-frame]');
-    if (mapFrame) {
-      e.preventDefault();
-      const frameId = mapFrame.getAttribute('data-map-frame')!;
-      const key = mapFrameIdToKey(frameId);
-      if (key) {
-        const delta = e.deltaY > 0 ? -0.3 : 0.3;
-        mapFrameZoomOffsets[key] = Math.round(
-          Math.max(-5, Math.min(5, mapFrameZoomOffsets[key] + delta)) * 10
-        ) / 10;
-        const sign = mapFrameZoomOffsets[key] >= 0 ? '+' : '';
-        const label = key === 'main' ? 'Main map' : key === 'insetCountry' ? 'Country inset' : 'State inset';
-        updateStatus(`${label} zoom: ${sign}${mapFrameZoomOffsets[key].toFixed(1)} — releasing...`);
-        debouncedRecaptureFrame(key);
+    if (e.ctrlKey || e.metaKey) {
+      const mapFrame = target.closest?.('[data-map-frame]');
+      if (mapFrame) {
+        e.preventDefault();
+        const frameId = mapFrame.getAttribute('data-map-frame')!;
+        const key = mapFrameIdToKey(frameId);
+        if (key) {
+          const delta = e.deltaY > 0 ? -0.3 : 0.3;
+          mapFrameZoomOffsets[key] = Math.round(
+            Math.max(-5, Math.min(5, mapFrameZoomOffsets[key] + delta)) * 10
+          ) / 10;
+          const sign = mapFrameZoomOffsets[key] >= 0 ? '+' : '';
+          const label = key === 'main' ? 'Main map' : key === 'insetCountry' ? 'Country inset' : 'State inset';
+          updateStatus(`${label} zoom: ${sign}${mapFrameZoomOffsets[key].toFixed(1)} — releasing...`);
+          debouncedRecaptureFrame(key);
+        }
+        return;
       }
-      return;
     }
 
-    // Otherwise → zoom the preview itself
+    // Plain scroll over scalable elements (northArrow, legend) → resize them
+    if (!e.ctrlKey && !e.metaKey) {
+      if (target.closest?.('[data-element="northArrow"], [data-element="legend"]')) return;
+      if (target.closest?.('[data-logo-image]')) return;
+    }
+
+    // All other scroll → zoom the layout preview (no Ctrl needed)
     e.preventDefault();
-    const factor = e.deltaY > 0 ? -0.2 : 0.2;
-    setPreviewScale(previewScale + factor);
+    const rect = scrollContainer.getBoundingClientRect();
+    const cursorX = e.clientX - rect.left;
+    const cursorY = e.clientY - rect.top;
+    const factor = e.deltaY > 0 ? 1 / 1.1 : 1.1;
+    zoomPreviewBy(factor, cursorX, cursorY);
   }, { passive: false });
+
+  // ── Middle-click drag to pan ──
+  let isPanning = false;
+  let panStartX = 0;
+  let panStartY = 0;
+  let panScrollX = 0;
+  let panScrollY = 0;
+
+  scrollContainer.addEventListener('mousedown', (e: MouseEvent) => {
+    // Middle button (1) or Space held
+    if (e.button === 1 || spaceHeld) {
+      e.preventDefault();
+      isPanning = true;
+      panStartX = e.clientX;
+      panStartY = e.clientY;
+      panScrollX = scrollContainer.scrollLeft;
+      panScrollY = scrollContainer.scrollTop;
+      scrollContainer.style.cursor = 'grabbing';
+    }
+  });
+
+  window.addEventListener('mousemove', (e: MouseEvent) => {
+    if (!isPanning) return;
+    scrollContainer.scrollLeft = panScrollX - (e.clientX - panStartX);
+    scrollContainer.scrollTop = panScrollY - (e.clientY - panStartY);
+  });
+
+  window.addEventListener('mouseup', (e: MouseEvent) => {
+    if (isPanning && (e.button === 1 || spaceHeld || true)) {
+      isPanning = false;
+      scrollContainer.style.cursor = '';
+    }
+  });
+
+  // ── Space key → pan mode (hold Space + drag, like Figma) ──
+  window.addEventListener('keydown', (e: KeyboardEvent) => {
+    if (e.code === 'Space' && !spaceHeld && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement)) {
+      spaceHeld = true;
+      scrollContainer.style.cursor = 'grab';
+    }
+  });
+
+  window.addEventListener('keyup', (e: KeyboardEvent) => {
+    if (e.code === 'Space') {
+      spaceHeld = false;
+      if (!isPanning) scrollContainer.style.cursor = '';
+    }
+  });
 }
+
+let spaceHeld = false;
 
 function mapFrameIdToKey(frameId: string): 'main' | 'insetCountry' | 'insetState' | null {
   if (frameId === 'main-map') return 'main';
