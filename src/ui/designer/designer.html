@@ -388,46 +388,82 @@
   <!-- About modal -->
   <div class="modal-overlay hidden" id="about-modal">
     <div class="modal about-modal">
-      <div class="about-header">
-        <svg class="about-logo" width="36" height="36" viewBox="0 0 24 24" fill="none">
-          <rect x="2" y="3" width="20" height="18" rx="2" stroke="#2563eb" stroke-width="1.5" fill="none"/>
-          <rect x="4" y="5" width="12" height="10" rx="1" stroke="#2563eb" stroke-width="1" fill="#dbeafe"/>
-          <rect x="17" y="5" width="4" height="4" rx="0.5" stroke="#2563eb" stroke-width="0.8" fill="#eff6ff"/>
-          <polygon points="19,11 18,14 20,14" fill="#2563eb"/>
-        </svg>
-        <div>
-          <h2 class="modal-title" style="margin-bottom:2px;">MapLayout Pro</h2>
-          <span style="font-size:12px;color:#64748b;">v1.2.0</span>
+      <!-- Hero banner -->
+      <div class="about-hero">
+        <button id="about-close" class="about-close-x" title="Close">&times;</button>
+        <div class="about-logo-ring">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
+            <rect x="2" y="3" width="20" height="18" rx="2" stroke="#fff" stroke-width="1.5" fill="none"/>
+            <rect x="4" y="5" width="12" height="10" rx="1" stroke="#fff" stroke-width="1" fill="rgba(255,255,255,0.25)"/>
+            <rect x="17" y="5" width="4" height="4" rx="0.5" stroke="#fff" stroke-width="0.8" fill="rgba(255,255,255,0.15)"/>
+            <polygon points="19,11 18,14 20,14" fill="#fff"/>
+          </svg>
         </div>
+        <h2 class="about-app-name">MapLayout Pro</h2>
+        <span class="about-version">v1.2.0</span>
       </div>
-      <p class="about-desc">Professional cartographic map layouts from your browser — no desktop GIS required.</p>
-      <div class="about-author">
-        <span class="about-label">Developed by</span>
-        <strong>Osman O. A. Ibrahim</strong>
-      </div>
-      <div class="about-socials">
-        <a href="https://osman-geomatics93.online/" target="_blank" rel="noopener" class="about-link">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-            <circle cx="8" cy="8" r="6.5"/>
-            <path d="M1.5 8h13M8 1.5c-2 2.5-2 9.5 0 13M8 1.5c2 2.5 2 9.5 0 13"/>
-          </svg>
-          Portfolio
-        </a>
-        <a href="https://github.com/Osman-Geomatics93" target="_blank" rel="noopener" class="about-link">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M8 .2A8 8 0 0 0 5.47 15.79c.4.07.55-.17.55-.38l-.01-1.49c-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.42 7.42 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48l-.01 2.2c0 .21.15.46.55.38A8 8 0 0 0 8 .2z"/>
-          </svg>
-          GitHub
-        </a>
-        <a href="https://www.linkedin.com/in/osman-o-a-ibrahim-a02a9a197" target="_blank" rel="noopener" class="about-link">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M0 1.146C0 .513.526 0 1.175 0h13.65C15.474 0 16 .513 16 1.146v13.708c0 .633-.526 1.146-1.175 1.146H1.175C.526 16 0 15.487 0 14.854V1.146zm4.943 12.248V6.169H2.542v7.225h2.401zm-1.2-8.212c.837 0 1.358-.554 1.358-1.248-.015-.709-.52-1.248-1.342-1.248-.822 0-1.359.54-1.359 1.248 0 .694.521 1.248 1.327 1.248h.016zm4.908 8.212V9.359c0-.216.016-.432.08-.586.173-.431.568-.878 1.232-.878.869 0 1.216.662 1.216 1.634v3.865h2.401V9.25c0-2.22-1.184-3.252-2.764-3.252-1.274 0-1.845.712-2.165 1.206V6.169H6.29c.032.68 0 7.225 0 7.225h2.36z"/>
-          </svg>
-          LinkedIn
-        </a>
-      </div>
-      <div class="modal-footer">
-        <button id="about-close" class="toolbar-btn btn-accent">Close</button>
+
+      <!-- Body -->
+      <div class="about-body">
+        <p class="about-tagline">Professional cartographic map layouts from your browser — no desktop GIS required.</p>
+
+        <!-- Feature pills -->
+        <div class="about-features">
+          <span class="about-pill">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 8h12M8 2v12"/></svg>
+            Multi-format Export
+          </span>
+          <span class="about-pill">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="8" r="6"/><path d="M8 4v4l3 2"/></svg>
+            Real-time Preview
+          </span>
+          <span class="about-pill">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="12" height="12" rx="1"/><path d="M2 6h12M6 2v12"/></svg>
+            Custom Layouts
+          </span>
+          <span class="about-pill">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="8" r="6"/><path d="M2 8h12M8 2c-2 2.5-2 9.5 0 12M8 2c2 2.5 2 9.5 0 12"/></svg>
+            4 Languages
+          </span>
+        </div>
+
+        <!-- Divider -->
+        <div class="about-divider"></div>
+
+        <!-- Author card -->
+        <div class="about-author-card">
+          <div class="about-author-avatar">OI</div>
+          <div class="about-author-info">
+            <span class="about-author-role">Developed by</span>
+            <strong class="about-author-name">Osman O. A. Ibrahim</strong>
+            <span class="about-author-title">GIS &amp; Geomatics Engineer</span>
+          </div>
+        </div>
+
+        <!-- Social links -->
+        <div class="about-socials">
+          <a href="https://osman-geomatics93.online/" target="_blank" rel="noopener" class="about-social-btn about-social-web">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+              <circle cx="8" cy="8" r="6.5"/>
+              <path d="M1.5 8h13M8 1.5c-2 2.5-2 9.5 0 13M8 1.5c2 2.5 2 9.5 0 13"/>
+            </svg>
+            Portfolio
+          </a>
+          <a href="https://github.com/Osman-Geomatics93" target="_blank" rel="noopener" class="about-social-btn about-social-gh">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M8 .2A8 8 0 0 0 5.47 15.79c.4.07.55-.17.55-.38l-.01-1.49c-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.42 7.42 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48l-.01 2.2c0 .21.15.46.55.38A8 8 0 0 0 8 .2z"/>
+            </svg>
+            GitHub
+          </a>
+          <a href="https://www.linkedin.com/in/osman-o-a-ibrahim-a02a9a197" target="_blank" rel="noopener" class="about-social-btn about-social-li">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M0 1.146C0 .513.526 0 1.175 0h13.65C15.474 0 16 .513 16 1.146v13.708c0 .633-.526 1.146-1.175 1.146H1.175C.526 16 0 15.487 0 14.854V1.146zm4.943 12.248V6.169H2.542v7.225h2.401zm-1.2-8.212c.837 0 1.358-.554 1.358-1.248-.015-.709-.52-1.248-1.342-1.248-.822 0-1.359.54-1.359 1.248 0 .694.521 1.248 1.327 1.248h.016zm4.908 8.212V9.359c0-.216.016-.432.08-.586.173-.431.568-.878 1.232-.878.869 0 1.216.662 1.216 1.634v3.865h2.401V9.25c0-2.22-1.184-3.252-2.764-3.252-1.274 0-1.845.712-2.165 1.206V6.169H6.29c.032.68 0 7.225 0 7.225h2.36z"/>
+            </svg>
+            LinkedIn
+          </a>
+        </div>
+
+        <p class="about-copyright">Made with care for the GIS community</p>
       </div>
     </div>
   </div>
