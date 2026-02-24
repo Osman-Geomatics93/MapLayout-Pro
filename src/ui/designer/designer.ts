@@ -3088,6 +3088,17 @@ function initElementControls(): void {
     (document.getElementById('el-na-visible') as HTMLInputElement).checked = state.elementOverrides.northArrow.visible;
     (document.getElementById('el-sb-visible') as HTMLInputElement).checked = state.elementOverrides.scaleBar.visible;
     (document.getElementById('el-lg-visible') as HTMLInputElement).checked = state.elementOverrides.legend.visible;
+    // Reset auxiliary element positions
+    const mfb = pageConfig.marginMM + 3 + (pageConfig.pageHeightMM - pageConfig.marginMM * 2 - 30);
+    if (state.scaleText?.visible) {
+      state.scaleText.position = { x: pageConfig.marginMM + 55, y: mfb + 12 };
+    }
+    if (state.disclaimerBox?.visible) {
+      state.disclaimerBox.position = { x: pageConfig.marginMM + 55, y: mfb + 17 };
+    }
+    if (state.locatorMap?.visible) {
+      state.locatorMap.position = { x: pageConfig.marginMM + 3, y: pageConfig.marginMM + 102 };
+    }
     rebuildSVGOnly();
   });
 }
@@ -3372,6 +3383,18 @@ function updatePageConfig(size: string, orientation: 'landscape' | 'portrait'): 
 
   // Reset overrides to new defaults for new page size
   state.elementOverrides = computeDefaultOverrides(pageConfig);
+
+  // Reset auxiliary element positions for new page dimensions
+  const mfb = pageConfig.marginMM + 3 + (pageConfig.pageHeightMM - pageConfig.marginMM * 2 - 30);
+  if (state.scaleText?.visible) {
+    state.scaleText.position = { x: pageConfig.marginMM + 55, y: mfb + 12 };
+  }
+  if (state.disclaimerBox?.visible) {
+    state.disclaimerBox.position = { x: pageConfig.marginMM + 55, y: mfb + 17 };
+  }
+  if (state.locatorMap?.visible) {
+    state.locatorMap.position = { x: pageConfig.marginMM + 3, y: pageConfig.marginMM + 102 };
+  }
 
   if (state.aoi) renderLayoutPreview();
 }
@@ -5339,9 +5362,10 @@ function initScaleText(): void {
   cb.addEventListener('change', () => {
     if (cb.checked) {
       const m = pageConfig.marginMM;
+      const mfb = m + 3 + (pageConfig.pageHeightMM - m * 2 - 30);
       state.scaleText = {
         visible: true,
-        position: { x: m + 55, y: pageConfig.pageHeightMM - m - 6 },
+        position: { x: m + 55, y: mfb + 12 },
         fontSize: 2.2,
       };
     } else {
@@ -5362,9 +5386,10 @@ function initDisclaimerBox(): void {
     panel.classList.toggle('hidden', !cb.checked);
     if (cb.checked) {
       const m = pageConfig.marginMM;
+      const mfb = m + 3 + (pageConfig.pageHeightMM - m * 2 - 30);
       state.disclaimerBox = state.disclaimerBox || {
         visible: true,
-        position: { x: m + 3, y: pageConfig.pageHeightMM - m - 10 },
+        position: { x: m + 55, y: mfb + 17 },
         text: (document.getElementById('disclaimer-text') as HTMLTextAreaElement).value,
         fontSize: 1.8,
         width: 60,
@@ -5450,7 +5475,7 @@ function initLocatorMap(): void {
       const m = pageConfig.marginMM;
       state.locatorMap = state.locatorMap || {
         visible: true,
-        position: { x: m + 3, y: m + 60 },
+        position: { x: m + 3, y: m + 8 + 38 + 14 + 38 + 4 },
         size: 40,
       };
       state.locatorMap.visible = true;

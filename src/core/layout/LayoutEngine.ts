@@ -64,19 +64,21 @@ export function computeDefaultOverrides(config: LayoutConfig): ElementOverrides 
   const { pageWidthMM, pageHeightMM, marginMM } = config;
   const mainFrameBottom = marginMM + 3 + (pageHeightMM - marginMM * 2 - 30);
   const mainFrameRight = marginMM + 50 + (pageWidthMM - marginMM * 2 - 55);
+  const mainFrameX = marginMM + 50;
+  const mainFrameCenterX = mainFrameX + (mainFrameRight - mainFrameX) / 2;
   return {
     northArrow: {
       visible: true,
-      position: { x: pageWidthMM - marginMM - 8, y: marginMM + 6 },
+      position: { x: mainFrameRight - 10, y: marginMM + 8 },
       scale: 1,
     },
     titleBlock: {
-      position: { x: pageWidthMM / 2 + 20, y: pageHeightMM - marginMM - 18 },
+      position: { x: mainFrameCenterX, y: mainFrameBottom + 5 },
       fontSize: 5.5,
     },
     scaleBar: {
       visible: true,
-      position: { x: mainFrameRight - 70, y: mainFrameBottom + 3 },
+      position: { x: mainFrameRight - 70, y: mainFrameBottom + 12 },
     },
     legend: {
       visible: true,
@@ -235,9 +237,10 @@ export function buildLayoutSVG(state: LayoutState, config: LayoutConfig): SVGSVG
 
   // 10. CRS metadata block
   if (state.crs) {
+    const mainFrameBottomY = mainFrame.y + mainFrame.height;
     svg.appendChild(buildCRSBlock(
       marginMM + 3,
-      pageHeightMM - marginMM - 19,
+      mainFrameBottomY + 13,
       state.crs
     ));
   }
@@ -392,19 +395,22 @@ function buildMapFrame(
 ): SVGElement {
   const g = svgEl('g', { id, 'data-map-frame': id });
 
-  // For rounded style, use a clipPath
   const useRounded = borderStyle === 'rounded';
   const roundR = 3;
-  if (useRounded && defsEl) {
+
+  // Always create a clipPath to prevent map image bleed outside frame
+  let contentTarget: SVGElement = g;
+  if (defsEl) {
     const clipId = `frame-clip-${id}`;
     const clip = svgEl('clipPath', { id: clipId });
     clip.appendChild(svgEl('rect', {
       x: frame.x, y: frame.y,
       width: frame.width, height: frame.height,
-      rx: roundR, ry: roundR,
+      ...(useRounded ? { rx: roundR, ry: roundR } : {}),
     }));
     defsEl.appendChild(clip);
-    g.setAttribute('clip-path', `url(#${clipId})`);
+    const contentGroup = svgEl('g', { 'clip-path': `url(#${clipId})` });
+    contentTarget = contentGroup;
   }
 
   // Shadow (behind everything for 'shadow' style)
@@ -416,8 +422,8 @@ function buildMapFrame(
     }));
   }
 
-  // Background
-  g.appendChild(svgEl('rect', {
+  // Background (inside clipped group)
+  contentTarget.appendChild(svgEl('rect', {
     x: frame.x,
     y: frame.y,
     width: frame.width,
@@ -426,7 +432,7 @@ function buildMapFrame(
     ...(useRounded ? { rx: roundR, ry: roundR } : {}),
   }));
 
-  // Map image (if rendered)
+  // Map image (if rendered, inside clipped group)
   if (imageDataUrl) {
     const img = svgEl('image', {
       x: frame.x,
@@ -436,14 +442,19 @@ function buildMapFrame(
       preserveAspectRatio: 'xMidYMid slice',
     });
     img.setAttributeNS('http://www.w3.org/1999/xlink', 'href', imageDataUrl);
-    g.appendChild(img);
+    contentTarget.appendChild(img);
   } else {
-    g.appendChild(svgText(
+    contentTarget.appendChild(svgText(
       frame.x + frame.width / 2,
       frame.y + frame.height / 2,
       'Map will render here',
       { fontSize: 3, fill: '#aaa', anchor: 'middle' }
     ));
+  }
+
+  // Add clipped content group to main group (after shadow, before borders)
+  if (contentTarget !== g) {
+    g.appendChild(contentTarget);
   }
 
   // Border based on style
@@ -943,8 +954,8 @@ function buildCRSBlock(x: number, y: number, crs: CRSInfo): SVGElement {
 
   const lines = formatCRSBlock(crs);
   lines.forEach((line, i) => {
-    g.appendChild(svgText(0, i * 3, line, {
-      fontSize: 1.8,
+    g.appendChild(svgText(0, i * 2.5, line, {
+      fontSize: 1.6,
       fontFamily: "'Courier New', 'Consolas', monospace",
       fill: '#555',
     }));
