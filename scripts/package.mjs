@@ -12,7 +12,9 @@ import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const distDir = join(__dirname, '..', 'dist');
-const outFile = join(__dirname, '..', 'maplayout-pro.zip');
+const manifest = JSON.parse(readFileSync(join(distDir, 'manifest.json'), 'utf-8'));
+const version = manifest.version;
+const outFile = join(__dirname, '..', `MapLayout-Pro-v${version}.zip`);
 
 function addDir(zip, dir) {
   for (const entry of readdirSync(dir)) {
